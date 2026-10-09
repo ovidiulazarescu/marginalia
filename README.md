@@ -46,6 +46,16 @@ Notes live in each browser's IndexedDB, not on the server. Every device keeps it
 
 To update, run `git pull` (or rerun `rsync`) on the server. nginx serves the new files without a restart.
 
+### Other Docker hosts
+
+On any machine with Docker Compose, run this from the repo root:
+
+```
+docker compose -f deploy/docker-compose.yml up -d
+```
+
+[`deploy/docker-compose.yml`](deploy/docker-compose.yml) serves the repo on port 8095 using relative paths, so it works wherever the repo is checked out. The TrueNAS YAML above is the same service with absolute paths, which TrueNAS requires.
+
 ## What's in it
 
 | Area | Where |
