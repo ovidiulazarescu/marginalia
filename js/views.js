@@ -2,7 +2,7 @@ import { html, useState, useEffect, useRef, useMemo, diffWords } from './lib.js'
 import {
   S, emit, open, back, forward, selectTab, closeTab, moveTab, toggleSplit, newTabCmd, setWs, setSettings, updateNote, restoreNote, destroyNote, emptyTrash,
   notebookPath, childNotebooks, notesIn, countDeep, liveNotes, backlinks, unlinkedMentions, listVersions, restoreVersion, recentNotes, descendants,
-  openCapture, createNote, toast, flushAll, nbPathString, allTags, renameTag, moveNote,
+  openCapture, createNote, toast, flushAll, nbPathString, allTags, renameTag, moveNote, noteText,
 } from './store.js';
 import { Icon, typeIcon } from './icons.js';
 import { openMenu, confirmDialog, promptDialog } from './dialogs.js';
@@ -14,6 +14,8 @@ import { noteMenu, notebookMenu, newPage, newCanvas, importPdfs, newNotebook, to
 import { backupAll, exportNotebookZip, restoreBackup } from './export.js';
 import { cls, mod, fmtRelative, fmtDateTime, dayBucket, groupBy, natCompare, today, parseHTML, escapeHtml, bytes, MOD, ALT, SHIFT, pickFiles, debounce } from './util.js';
 import { db } from './db.js';
+import { syncNow, setToken, getToken } from './sync.js';
+import { SYNC_LABEL } from './sidebar.js';
 
 export function titleFor(id) {
   if (id === 'home') return ['Home', 'home'];
@@ -225,8 +227,8 @@ function HistoryPanel({ note }) {
     ${[...groups.entries()].map(([g, vs]) => html`<div class="hist-group"><h5>${g}</h5>
       ${vs.map((v, i) => html`<button class="hist-row" onClick=${() => setOpen(v)}>
         <span class="hist-time">${new Date(v.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}${g !== 'Today' && g !== 'Yesterday' ? ' · ' + new Date(v.ts).toLocaleDateString([], { month: 'short', day: 'numeric' }) : ''}</span>
-        <span class=${'hist-kind ' + v.reason}>${v.reason === 'manual' ? v.label || 'Saved version' : v.reason === 'restore' ? 'Before restore' : 'Autosave'}</span>
-        <span class="hist-words">${v.type === 'pdf' ? `${(v.content.ann || []).length} marks` : v.type === 'canvas' ? `${v.content.items?.length || 0} cards` : `${(v.words || 0).toLocaleString()} words`}</span>
+        <span class=${'hist-kind ' + v.reason}>${v.reason === 'manual' ? v.label || 'Saved version' : v.reason === 'restore' ? 'Before restore' : v.reason === 'conflict' ? 'From another device' : 'Autosave'}</span>
+        <span class="hist-words">${v.reason === 'conflict' ? 'Replaced by a newer edit' : v.type === 'pdf' ? `${(v.content.ann || []).length} marks` : v.type === 'canvas' ? `${v.content.items?.length || 0} cards` : `${(v.words || 0).toLocaleString()} words`}</span>
       </button>`)}
     </div>`)}
     ${open_ && html`<${VersionModal} v=${open_} note=${note} close=${() => setOpen(null)} />`}
@@ -234,7 +236,8 @@ function HistoryPanel({ note }) {
 }
 function VersionModal({ v, note, close }) {
   const [mode, setMode] = useState('changes');
-  const parts = useMemo(() => diffWords(v.text || '', note.text || ''), [v.id]);
+  const vText = v.text ?? noteText(v);
+  const parts = useMemo(() => diffWords(vText || '', note.text || ''), [v.id]);
   const added = parts.filter((p) => p.added).reduce((s, p) => s + p.value.split(/\s+/).filter(Boolean).length, 0);
   const removed = parts.filter((p) => p.removed).reduce((s, p) => s + p.value.split(/\s+/).filter(Boolean).length, 0);
   return html`<div class="scrim" onPointerDown=${(e) => e.target === e.currentTarget && close()} onKeyDown=${(e) => e.key === 'Escape' && close()}>
@@ -258,7 +261,7 @@ function VersionModal({ v, note, close }) {
               return html`<span>${head}</span><span class="fold">⋯ ${(v.length - head.length - tail.length).toLocaleString()} unchanged characters ⋯</span><span>${tail}</span>`;
             })}</div>`
           : v.type === 'page' ? html`<div class="prose" dangerouslySetInnerHTML=${{ __html: v.content.html || '<p class="muted">Empty</p>' }}></div>`
-          : html`<pre class="diff">${v.text || '(no text)'}</pre>`}
+          : html`<pre class="diff">${vText || '(no text)'}</pre>`}
       </div>
       <div class="dialog-actions">
         <button class="btn" onClick=${close}>Close</button>
@@ -490,8 +493,9 @@ function Settings() {
       ${[['recent', 'Jump back in'], ['pinned', 'Pinned'], ['edited', 'Recently edited'], ['inbox', 'Inbox'], ['notebooks', 'Notebooks']].map(([k, l]) => html`<div class="set-row"><div><b>${l}</b></div>
         <label class="switch"><input type="checkbox" id=${'home-' + k} checked=${st.homeSections[k]} onChange=${(e) => setSettings({ homeSections: { ...st.homeSections, [k]: e.target.checked } })} /><span></span></label></div>`)}
     </section>
+    <${SyncSettings} />
     <section class="set-sec"><h2>Your data</h2>
-      <p class="set-note">Everything is stored in this browser on this device${S.persistent ? '' : ' — but storage is unavailable here, so changes will be lost when you close the page'}. Back up regularly, especially before clearing browser data.
+      <p class="set-note">${S.sync.state === 'off' ? 'Everything is stored in this browser on this device' : 'This browser keeps a full copy of your notes so the app works offline'}${S.persistent ? '' : ' — but storage is unavailable here, so changes will be lost when you close the page'}. ${S.sync.state === 'off' ? 'Back up regularly, especially before clearing browser data.' : 'A backup file is still useful as a second copy.'}
         ${usage && html` Using ${bytes(usage.usage || 0)}${usage.quota ? ` of ${bytes(usage.quota)} available` : ''}.`}</p>
       <div class="set-buttons">
         <button class="btn" onClick=${backupAll}><${Icon} name="download" size=${16} />Download full backup</button>
@@ -505,4 +509,23 @@ function Settings() {
     </section>
     <section class="set-sec"><h2>About</h2><p class="set-note">Marginalia is a local-first notebook for studying. No accounts, no tracking, no AI. Press <kbd>${MOD}/</kbd> for keyboard shortcuts.</p></section>
   </div></div>`;
+}
+
+function SyncSettings() {
+  const y = S.sync;
+  const [tok, setTok] = useState(getToken());
+  if (y.state === 'off') return html`<section class="set-sec"><h2>Sync</h2>
+    <p class="set-note">Not connected to a sync server, so notes stay in this browser. To sync across devices, run the app with <code>serve.py</code> (see the README). It stores notes on your own machine and keeps every browser up to date.</p></section>`;
+  const needsToken = y.state === 'token' || y.auth;
+  return html`<section class="set-sec"><h2>Sync</h2>
+    <div class="set-row"><div><b class=${'sync-state ' + y.state}>${SYNC_LABEL[y.state]}</b>
+      <p>${y.error || (y.state === 'idle' ? `Notes are saved on your server and in this browser.${y.last ? ` Last synced ${fmtRelative(y.last)}.` : ''}` : y.state === 'offline' ? 'Changes are kept in this browser and will sync when the server is back.' : 'Notes are saved on your server and in this browser.')}
+        ${y.pending ? ` ${y.pending} ${y.pending === 1 ? 'change is' : 'changes are'} waiting to upload.` : ''}</p></div>
+      <button class="btn small" disabled=${y.state === 'syncing'} onClick=${() => syncNow()}><${Icon} name="refresh" size=${15} />Sync now</button></div>
+    ${y.state === 'expired' && html`<div class="set-row"><div><b>Sign in again</b><p>Your Cloudflare Access session ended. Reloading the page takes you to the sign-in screen.</p></div><button class="btn small" onClick=${() => location.reload()}>Reload</button></div>`}
+    ${needsToken && html`<div class="set-row"><div><b>Sync token</b><p>The server was started with a token. Enter the same value here, once per browser.</p></div>
+      <form class="token-form" onSubmit=${(e) => { e.preventDefault(); setToken(tok); toast('Token saved'); }}>
+        <input class="input" id="sync-token" type="password" autocomplete="off" value=${tok} placeholder="Token" onInput=${(e) => setTok(e.target.value)} />
+        <button class="btn small primary" type="submit">Save</button></form></div>`}
+  </section>`;
 }

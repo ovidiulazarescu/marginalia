@@ -5,7 +5,21 @@ import { openMenu } from './dialogs.js';
 import { newPage, newCanvas, importPdfs, newNotebook, noteMenu, notebookMenu, importAny } from './actions.js';
 import { TEMPLATES } from './templates.js';
 import { importFiles } from './export.js';
-import { cls, mod, natCompare, MOD, ALT, SHIFT } from './util.js';
+import { cls, mod, natCompare, fmtRelative, MOD, ALT, SHIFT } from './util.js';
+
+export const SYNC_LABEL = {
+  checking: 'Connecting…', syncing: 'Syncing…', idle: 'Synced', offline: 'Offline', token: 'Needs sync token',
+  expired: 'Sign-in expired', error: 'Sync problem', off: 'This device only',
+};
+function SyncDot() {
+  const y = S.sync;
+  if (y.state === 'off') return null;
+  const tone = { idle: 'ok', syncing: 'busy', checking: 'busy', offline: 'warn', token: 'bad', expired: 'bad', error: 'bad' }[y.state];
+  const label = y.state === 'idle' && y.pending ? `${y.pending} waiting` : SYNC_LABEL[y.state];
+  const title = [label, y.last && `Last synced ${fmtRelative(y.last)}`, y.error].filter(Boolean).join(' · ');
+  return html`<button class=${'sync-dot ' + tone} title=${title} aria-label=${'Sync: ' + title} onClick=${() => open('settings')}>
+    <${Icon} name=${y.state === 'offline' || tone === 'bad' ? 'cloudOff' : 'cloud'} size=${16} /><span class="sd-label">${label}</span></button>`;
+}
 
 const dragNote = (e, id) => { e.dataTransfer.setData('application/x-note-id', id); e.dataTransfer.setData('text/plain', S.notes.get(id)?.title || ''); e.dataTransfer.effectAllowed = 'copyMove'; };
 function dropHandlers(target, setOver) {
@@ -118,6 +132,7 @@ export function Sidebar() {
     </nav>
     <div class="sb-foot">
       ${navRow('trash', 'trash', 'Trash', trash)}
+      <${SyncDot} />
       <div class="sb-foot-btns">
         <button class="icon-btn" title="Settings" aria-label="Settings" onClick=${() => open('settings')}><${Icon} name="settings" size=${17} /></button>
         <button class="icon-btn" title="Keyboard shortcuts" aria-label="Keyboard shortcuts" onClick=${() => { S.ui.help = true; emit(); }}><${Icon} name="keyboard" size=${17} /></button>

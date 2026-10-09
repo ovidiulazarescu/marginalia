@@ -2,6 +2,7 @@ import { useState, useEffect, loadPdfjs } from './lib.js';
 import { db, initDB, persistent } from './db.js';
 import { uid, now, htmlToText, wordCount, natCompare, debounce } from './util.js';
 import * as search from './search.js';
+import { sync, start as startSync, bootstrap as syncBootstrap, fetchFileBlob } from './sync.js';
 
 export const DEFAULT_SETTINGS = {
   theme: 'system', editorFont: 'sans', editorWidth: 'normal', penOnly: true, sidebar: true,
@@ -20,6 +21,7 @@ export const S = {
   ws: { panes: [newPane('home')], active: 0, inspector: false, inspectorTab: 'links', expanded: {}, tagsOpen: true, pinnedOpen: true, listMode: {} },
   ui: { palette: null, capture: null, dialog: null, toasts: [], help: false, sidebarOpenMobile: false },
   jump: {},
+  sync,
   rev: 0,
 };
 
@@ -52,9 +54,11 @@ export function persistNote(id, delay = 350) {
 }
 const strip = (n) => { const { text, links, words, rev, ...rest } = n; return rest; };
 export function flushAll() {
-  for (const [id, t] of pending) { clearTimeout(t); const n = S.notes.get(id); if (n) db.put('notes', strip(n)); }
-  pending.clear();
   flushers.forEach((f) => f());
+  const writes = [];
+  for (const [id, t] of pending) { clearTimeout(t); const n = S.notes.get(id); if (n) writes.push(db.put('notes', strip(n))); }
+  pending.clear();
+  return Promise.all(writes);
 }
 // Editors register flush callbacks so pending keystrokes reach the store before navigation/export.
 export const flushers = new Set();
@@ -115,6 +119,10 @@ export function unlinkedMentions(note) {
 export async function load() {
   await initDB();
   S.persistent = persistent;
+  // A new device signed in to a sync server starts from the server's notes, not the samples.
+  if (!(await db.get('kv', 'seeded')) && !(await db.all('notes')).length) {
+    if ((await syncBootstrap()) && (await db.all('notes')).length) await db.put('kv', { key: 'seeded', value: true });
+  }
   const [notes, nbs, kv, pdft] = await Promise.all([db.all('notes'), db.all('notebooks'), db.all('kv'), db.all('pdftext')]);
   for (const nb of nbs) S.notebooks.set(nb.id, nb);
   for (const n of notes) S.notes.set(n.id, n);
@@ -130,6 +138,32 @@ export async function load() {
   }
   S.ready = true;
   applyTheme();
+  emit();
+  startSync({ emit, apply: applyRemote, flush: flushAll });
+}
+
+// Changes pulled from the sync server (already written to IndexedDB) applied to the live app.
+export function applyRemote(changes) {
+  let relink = false;
+  for (const c of changes) {
+    if (c.store === 'notes') {
+      const old = S.notes.get(c.id);
+      if (c.deleted) { S.notes.delete(c.id); search.remove(c.id); continue; }
+      const n = { ...c.data };
+      derive(n);
+      const changed = !old || old.title !== n.title || JSON.stringify(old.content) !== JSON.stringify(n.content);
+      n.rev = (old?.rev || 0) + (changed ? 1 : 0); // reloads open editors
+      S.notes.set(n.id, n);
+      search.upsert(n);
+      if (!old || old.title !== n.title) relink = true;
+    } else if (c.store === 'notebooks') {
+      if (c.deleted) S.notebooks.delete(c.id); else S.notebooks.set(c.id, c.data);
+    } else if (c.store === 'pdftext') {
+      if (c.deleted) S.pdfText.delete(c.id);
+      else { S.pdfText.set(c.id, c.data.pages); search.addPdf(c.id, c.data.pages); }
+    } else if (c.store === 'versions') S.vrev = (S.vrev || 0) + 1;
+  }
+  if (relink) relinkByTitle();
   emit();
 }
 
@@ -455,7 +489,15 @@ export function openCapture(opts = {}) { S.ui.capture = { ...opts }; emit(); }
 
 /* ---------- PDFs ---------- */
 const docCache = new Map();
-export async function getFile(id) { return db.get('files', id); }
+export async function getFile(id) {
+  let f = await db.get('files', id);
+  if (!f?.blob) {
+    // Uploaded from another device: download it once and keep a local copy.
+    const blob = await fetchFileBlob(id);
+    if (blob) { f = { ...(f || { id, name: 'document.pdf' }), size: blob.size, blob: new Blob([blob], { type: 'application/pdf' }) }; await db.put('files', f, { remote: true }); }
+  }
+  return f;
+}
 export function getPdfDoc(fileId) {
   if (docCache.has(fileId)) { const p = docCache.get(fileId); docCache.delete(fileId); docCache.set(fileId, p); return p; }
   const p = (async () => {
