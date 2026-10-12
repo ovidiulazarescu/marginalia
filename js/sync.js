@@ -55,6 +55,7 @@ async function probe() {
   sync.auth = !!h.auth;
   if (h.auth && !getToken()) throw new SyncError('token', 'This server needs a sync token.');
   available = true;
+  return h;
 }
 
 const getKV = async (k) => (await db.get('kv', k))?.value;
@@ -72,6 +73,35 @@ async function queueExisting() {
   }
   await db.putMany('sync', add, { remote: true });
   await setKV('syncQueued', true);
+}
+
+// Each server database has a permanent ID. If it changes (the server was reset, its data
+// folder replaced, or this browser now points at a different server), everything this
+// browser holds is sent again and the server's copy is read back from the start.
+let serverId = null;
+async function adoptServer(id) {
+  if (!id) return false;
+  serverId = id;
+  const prev = await getKV('syncServer');
+  if (prev === id) return false;
+  const cursor = (await getKV('syncCursor')) || 0;
+  const changed = !!prev || cursor > 0;
+  if (changed) {
+    const entries = await db.all('sync');
+    const keep = [];
+    for (const e of entries) {
+      if (e.deleted) { if (!e.dirty) await db.del('sync', e.key, { remote: true }); continue; }
+      if (!e.dirty) { e.dirty = 1; e.resync = 1; e.b = e.m; }
+      if (e.store === 'files') e.up = 0;
+      keep.push(e);
+    }
+    await db.putMany('sync', keep, { remote: true });
+    await setKV('syncQueued', false); // also queue any record that never had a sync entry
+    await queueExisting();
+    await setKV('syncCursor', 0);
+  }
+  await setKV('syncServer', id);
+  return changed;
 }
 
 async function countPending() { sync.pending = (await db.byIndex('sync', 'dirty', 1)).length; }
@@ -94,7 +124,7 @@ async function push() {
         cur.b = r.record.m;
         remote.push(await applyLocal(r.record));
       }
-      if (cur.m === entry.m) cur.dirty = 0;
+      if (cur.m === entry.m) { cur.dirty = 0; cur.resync = 0; }
       await db.put('sync', cur, { remote: true });
     }
     if (remote.length) hooks.apply(remote.filter(Boolean));
@@ -115,7 +145,7 @@ async function push() {
         data = meta;
       }
     }
-    const rec = { store: entry.store, id: entry.id, m: entry.m, b: entry.b ?? null, deleted: !!entry.deleted, data };
+    const rec = { store: entry.store, id: entry.id, m: entry.m, b: entry.b ?? null, deleted: !!entry.deleted, data, resync: !!entry.resync };
     const bytes = JSON.stringify(rec).length;
     if (size + bytes > BATCH_BYTES) await send();
     batch.push({ entry, rec });
@@ -142,12 +172,20 @@ async function pull() {
   let since = (await getKV('syncCursor')) || 0;
   for (;;) {
     const res = await api(`changes?since=${since}&limit=400`);
+    if (res.instance && serverId && res.instance !== serverId) {
+      // The server changed underneath us: re-send everything, then read it all back.
+      await adoptServer(res.instance);
+      again = true;
+      return;
+    }
     const changes = [];
     for (const r of res.records) {
       const key = syncKey(r.store, r.id);
       const cur = await db.get('sync', key);
       // A local edit is still waiting to be pushed; the server will settle it on the next push.
       if (cur?.dirty) continue;
+      // Already have exactly this version (for example, one this browser just uploaded).
+      if (cur && !r.deleted && cur.m === r.m && cur.b === r.m) continue;
       const c = await applyLocal(r);
       if (c) changes.push(c);
       await db.put('sync', { key, store: r.store, id: r.id, dirty: 0, deleted: r.deleted ? 1 : 0, m: r.m, b: r.m, up: 1 }, { remote: true });
@@ -197,14 +235,16 @@ export async function start(h) {
   clearInterval(timer);
   available = false;
   setState('checking');
+  let health;
   try {
-    await probe();
+    health = await probe();
   } catch (e) {
     setState(e.state || 'offline', e.message || '');
     if (e.state === 'offline') timer = setInterval(() => start(hooks), PULL_EVERY);
     return;
   }
   await queueExisting();
+  await adoptServer(health.instance);
   setDirtyListener(() => { countPending().then(hooks.emit); soon(); });
   timer = setInterval(syncNow, PULL_EVERY);
   syncNow();
@@ -216,7 +256,9 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden && av
 // First run on a new device: fetch everything from the server before deciding to add sample notes.
 export async function bootstrap() {
   try {
-    await probe();
+    const h = await probe();
+    serverId = h.instance || null;
+    if (h.instance) await setKV('syncServer', h.instance);
     await pull();
     await setKV('syncQueued', true);
     return true;

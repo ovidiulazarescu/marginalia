@@ -14,6 +14,8 @@ This opens http://localhost:5178. It needs only Python 3 and has no other depend
 
 Each browser keeps a full copy of your notes in IndexedDB, so the app is fast and works offline. It syncs with the server in the background every 30 seconds, shortly after each edit, and when you come back online. If two devices change the same note, the newest edit wins and the other one is kept in that note's version history, labelled "From another device". The status of the sync is shown at the bottom of the sidebar and in **Settings → Sync**.
 
+Each server database has a permanent ID. If the server is reset or its data folder is replaced, every browser that connects notices the new ID and uploads the notes and PDFs it holds, so the server is rebuilt from your devices.
+
 When the app is served by a plain static web server instead, there is no sync: notes stay in that browser. **Settings → Download full backup** works either way.
 
 No build step: the app is plain ES modules. Preact, pdf.js, pdf-lib, perfect-freehand, MiniSearch, jsdiff and JSZip load from jsDelivr at pinned versions (see `js/lib.js`), so the first load needs an internet connection.

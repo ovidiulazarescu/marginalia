@@ -37,7 +37,17 @@ class Store:
               store TEXT NOT NULL, id TEXT NOT NULL, data TEXT, m INTEGER NOT NULL,
               deleted INTEGER NOT NULL DEFAULT 0, seq INTEGER NOT NULL, PRIMARY KEY (store, id));
             CREATE INDEX IF NOT EXISTS records_seq ON records (seq);
+            CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);
         ''')
+        # A permanent ID for this database. Browsers compare it on every sync, so a reset
+        # or replaced server (new ID) makes them upload everything they have again.
+        row = self.db.execute("SELECT v FROM meta WHERE k = 'instance'").fetchone()
+        if row:
+            self.instance = row[0]
+        else:
+            self.instance = uuid.uuid4().hex
+            with self.db:
+                self.db.execute("INSERT INTO meta (k, v) VALUES ('instance', ?)", (self.instance,))
         self.seq = self.db.execute('SELECT COALESCE(MAX(seq), 0) FROM records').fetchone()[0]
 
     def _write(self, store, rid, data, m, deleted):
@@ -69,7 +79,12 @@ class Store:
                     results.append({'ok': False, 'error': 'invalid'})
                     continue
                 m, base, deleted, data = int(r.get('m') or 0), r.get('b'), bool(r.get('deleted')), r.get('data')
+                # resync: a browser re-sending what it already had, not a new edit.
+                resync = bool(r.get('resync'))
                 row = self.db.execute('SELECT data, m, deleted FROM records WHERE store = ? AND id = ?', (store, rid)).fetchone()
+                if resync and row is not None and row[1] == m and bool(row[2]) == deleted:
+                    results.append({'ok': True})  # the server already has this exact version
+                    continue
                 if row is None or row[1] == base:
                     self._write(store, rid, data, m, deleted)  # new record, or a clean fast-forward
                     results.append({'ok': True})
@@ -77,12 +92,12 @@ class Store:
                 # Two devices changed the same record: the newest edit wins.
                 server = {'store': store, 'id': rid, 'data': None if row[2] else json.loads(row[0]), 'm': row[1], 'deleted': bool(row[2])}
                 if m >= row[1]:
-                    if store == 'notes' and not row[2]:
+                    if store == 'notes' and not row[2] and not resync:
                         self._keep_conflict(rid, server['data'], row[1])
                     self._write(store, rid, data, m, deleted)
                     results.append({'ok': True})
                 else:
-                    if store == 'notes' and not deleted:
+                    if store == 'notes' and not deleted and not resync:
                         self._keep_conflict(rid, data, m)
                     results.append({'ok': False, 'record': server})
         return results
@@ -97,6 +112,7 @@ class Store:
             'records': [{'store': s, 'id': i, 'data': None if d else json.loads(x), 'm': m, 'deleted': bool(d)} for s, i, x, m, d, _ in rows],
             'next': rows[-1][5] if rows else since,
             'more': more,
+            'instance': self.instance,
         }
 
     def blob_path(self, fid):
@@ -171,7 +187,7 @@ def make_handler(store, token):
                     return self.static(path)
                 return self.send(405, {'error': 'method not allowed'})
             if path == '/api/health':
-                return self.send(200, {'app': 'marginalia', 'auth': bool(token), 'ok': True})
+                return self.send(200, {'app': 'marginalia', 'auth': bool(token), 'ok': True, 'instance': store.instance})
             if not self.authorized():
                 return self.send(401, {'error': 'unauthorized'})
             if path == '/api/push' and self.command == 'POST':
