@@ -1,7 +1,8 @@
 // PDF reader + annotator: text highlights/underlines with comments, pen and highlighter ink,
 // typed text boxes, eraser, outline, find, and a companion notes page.
 import { html, useState, useRef, useEffect, useLayoutEffect, useMemo, loadPdfjs } from './lib.js';
-import { S, updateNote, getPdfDoc, open, createNote, flushAll, toast, flushers, emit } from './store.js';
+import { S, updateNote, getPdfDoc, open, createNote, flushAll, toast, flushers, emit, setSettings, pdfIsDark } from './store.js';
+import { openMenu } from './dialogs.js';
 import { strokePath, livePath, hitStroke, strokeBounds, round1, pointFromEvent, colorCss, INK_COLORS, HL_COLORS } from './ink.js';
 import { Icon } from './icons.js';
 import { uid, cls, clamp, mod, debounce, isTyping, escapeHtml, snippet, highlightTerms, MOD, SHIFT } from './util.js';
@@ -9,6 +10,8 @@ import { uid, cls, clamp, mod, debounce, isTyping, escapeHtml, snippet, highligh
 const GAP = 18;
 const TOOLS = [['select', 'pointer', 'Select text & annotations', 'V'], ['hand', 'hand', 'Pan', 'H'], ['pen', 'pen', 'Pen', 'P'], ['marker', 'marker', 'Highlighter', 'M'], ['eraser', 'eraser', 'Eraser', 'E'], ['text', 'text', 'Text box', 'T']];
 const KEYMAP = { v: 'select', h: 'hand', p: 'pen', m: 'marker', e: 'eraser', t: 'text' };
+// "Ink" is near-black on light pages and near-white on dark ones.
+const inkCss = (c) => (c === 'ink' ? 'var(--pdf-ink)' : c);
 
 function mergeRects(rects) {
   rects = rects.filter((r) => r[2] > 0.5 && r[3] > 0.5).sort((a, b) => a[1] - b[1] || a[0] - b[0]);
@@ -82,20 +85,20 @@ function PdfPage({ doc, n, size, z, visible, anns, selId, findQ, editingId, setE
           : html`<rect x=${r[0]} y=${r[1]} width=${r[2]} height=${r[3]} fill=${a.color} />`))}
         ${a.comment && html`<circle cx=${a.rects[0][0] - 6} cy=${a.rects[0][1] + 4} r="3.2" fill=${a.color} stroke="#0003" stroke-width=".6" />`}
       </g>`)}
-      ${inks.map((a) => html`<path key=${a.id} d=${strokePath(a)} fill=${a.color === 'ink' ? '#1d2320' : a.color} opacity=${a.tool === 'marker' ? 0.4 : 1} class=${a.tool === 'marker' ? 'mk' : ''} />`)}
+      ${inks.map((a) => html`<path key=${a.id} d=${strokePath(a)} style=${`fill:${inkCss(a.color)}`} opacity=${a.tool === 'marker' ? 0.4 : 1} class=${a.tool === 'marker' ? 'mk' : ''} />`)}
       <path class="pdf-live" />
       ${sb && html`<rect class="pdf-selbox" x=${sb.x - 3} y=${sb.y - 3} width=${sb.w + 6} height=${sb.h + 6} rx="2" />`}
     </svg>
     <div class="textLayer" ref=${textRef}></div>
     <div class="pdf-texts">
       ${texts.map((a) => editingId === a.id
-        ? html`<textarea key=${a.id} class="pdf-textbox editing" id=${'tb-' + a.id} style=${`left:${a.x * z}px;top:${a.y * z}px;width:${a.w * z}px;font-size:${(a.size || 14) * z}px;color:${a.color === 'ink' ? '#1d2320' : a.color}`}
+        ? html`<textarea key=${a.id} class="pdf-textbox editing" id=${'tb-' + a.id} style=${`left:${a.x * z}px;top:${a.y * z}px;width:${a.w * z}px;font-size:${(a.size || 14) * z}px;color:${inkCss(a.color)}`}
             defaultValue=${a.text}
             onPointerDown=${(e) => e.stopPropagation()}
             onInput=${(e) => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; }}
             onKeyDown=${(e) => { e.stopPropagation(); if (e.key === 'Escape' || (e.key === 'Enter' && mod(e))) e.target.blur(); }}
             onBlur=${(e) => { setEditingId(null); const t = e.target.value; if (!t.trim()) removeAnn(a.id); else if (t !== a.text) commitAnn(a.id, { text: t }); }}></textarea>`
-        : html`<div key=${a.id} data-ann=${a.id} class=${cls('pdf-textbox', selId === a.id && 'sel')} style=${`left:${a.x * z}px;top:${a.y * z}px;width:${a.w * z}px;font-size:${(a.size || 14) * z}px;color:${a.color === 'ink' ? '#1d2320' : a.color}`}>${a.text}</div>`)}
+        : html`<div key=${a.id} data-ann=${a.id} class=${cls('pdf-textbox', selId === a.id && 'sel')} style=${`left:${a.x * z}px;top:${a.y * z}px;width:${a.w * z}px;font-size:${(a.size || 14) * z}px;color:${inkCss(a.color)}`}>${a.text}</div>`)}
     </div>
     <div class="pdf-pageno">${n}</div>
   </div>`;
@@ -273,7 +276,7 @@ export function PdfView({ note }) {
     if (t === 'pen' || t === 'marker') {
       const marker = t === 'marker';
       const live = pg.querySelector('.pdf-live');
-      live.setAttribute('fill', marker ? hlColor : penColor === 'ink' ? '#1d2320' : penColor);
+      live.style.fill = marker ? hlColor : inkCss(penColor);
       live.setAttribute('opacity', marker ? '0.4' : '1');
       g.current = { kind: 'draw', pg, live, stroke: { kind: 'ink', page: n, tool: t, color: marker ? hlColor : penColor, size: marker ? 12 : penSize, sim: e.pointerType !== 'pen', points: [[round1(x), round1(y), e.pressure || 0.5]] } };
     } else if (t === 'eraser') { g.current = { kind: 'erase', pg, n, removed: new Set() }; eraseAt(n, x, y); }
@@ -452,7 +455,14 @@ export function PdfView({ note }) {
 
   if (err) return html`<div class="empty-state"><${Icon} name="pdf" size=${32} /><h3>This PDF couldn't be opened</h3><p>${err}</p></div>`;
 
-  return html`<div class="pdf-wrap" onKeyDown=${onKeyDown}>
+  const dark = pdfIsDark();
+  const pageMenu = (e) => openMenu(e, [
+    { header: 'Page colour' },
+    { label: 'Light', icon: 'sun', checked: S.settings.pdfTheme === 'light', run: () => setSettings({ pdfTheme: 'light' }) },
+    { label: 'Dark', icon: 'moon', checked: S.settings.pdfTheme === 'dark', run: () => setSettings({ pdfTheme: 'dark' }) },
+    { label: 'Match app theme', icon: 'settings', checked: S.settings.pdfTheme === 'auto', run: () => setSettings({ pdfTheme: 'auto' }) },
+  ], { align: 'right' });
+  return html`<div class=${cls('pdf-wrap', dark && 'pdf-dark')} onKeyDown=${onKeyDown}>
     <div class="pdf-toolbar pdf-ui">
       <button class=${cls('icon-btn', side && 'on')} title="Annotations, outline and find" aria-label="Toggle PDF sidebar" onClick=${() => setSideP(side ? null : 'ann')}><${Icon} name="sidebar" /></button>
       <div class="pageno">
@@ -463,6 +473,7 @@ export function PdfView({ note }) {
       <button class="icon-btn" title="Zoom out" aria-label="Zoom out" onClick=${() => setZoom(z / 1.15)}><${Icon} name="zoomOut" /></button>
       <button class="zoom-pct" title="Fit width" onClick=${() => setZoom('fit')}>${zoom === 'fit' ? 'Fit' : Math.round(z * 100) + '%'}</button>
       <button class="icon-btn" title="Zoom in" aria-label="Zoom in" onClick=${() => setZoom(z * 1.15)}><${Icon} name="zoomIn" /></button>
+      <button class=${cls('icon-btn', dark && 'on')} title="Page colour: light, dark or match the app" aria-label="Page colour" onClick=${pageMenu}><${Icon} name=${dark ? 'moon' : 'sun'} /></button>
       <span class="spacer"></span>
       <span class="pdf-progress" title="Reading progress">${sizes ? Math.round((cur / sizes.length) * 100) : 0}%</span>
       <button class="btn small" onClick=${openCompanion} title="Open the notes page for this PDF side by side"><${Icon} name="page" size=${16} />Notes</button>
@@ -512,7 +523,7 @@ export function PdfView({ note }) {
       <span class="dock-sep"></span>
       ${tool === 'marker' || tool === 'select'
         ? HL_COLORS.map((c) => html`<button class=${cls('swatch', hlColor === c.id && 'on')} style=${`--c:${c.id}`} title=${`${c.label} highlight`} aria-label=${c.label} onClick=${() => { setHlColor(c.id); if (selAnn?.kind === 'hl') commitAnn(selAnn.id, { color: c.id }); }}></button>`)
-        : INK_COLORS.map((c) => html`<button class=${cls('swatch', penColor === c.id && 'on')} style=${`--c:${c.id === 'ink' ? '#1d2320' : c.css}`} title=${c.label} aria-label=${c.label} onClick=${() => setPenColor(c.id)}></button>`)}
+        : INK_COLORS.map((c) => html`<button class=${cls('swatch', penColor === c.id && 'on')} style=${`--c:${inkCss(c.id)}`} title=${c.label} aria-label=${c.label} onClick=${() => setPenColor(c.id)}></button>`)}
       ${tool === 'pen' && html`<span class="dock-sep"></span>${[1, 1.6, 3].map((s) => html`<button class=${cls('size-btn', penSize === s && 'on')} title=${`Size ${s}`} onClick=${() => setPenSize(s)}><span style=${`width:${s * 2.4 + 2}px;height:${s * 2.4 + 2}px`}></span></button>`)}`}
       <span class="dock-sep"></span>
       <button class="dock-btn" title=${`Undo (${MOD}Z)`} aria-label="Undo" disabled=${!hist.current.undo.length} onClick=${undo}><${Icon} name="undo" size=${18} /></button>
@@ -538,7 +549,7 @@ function AnnPopover({ a, rect, commitAnn, removeAnn, quote, close }) {
   const below = rect.y + 200 < innerHeight;
   return html`<div class="popover annpop pdf-ui" style=${`left:${clamp(rect.x - 160, 8, innerWidth - 330)}px;top:${below ? rect.y + 10 : Math.max(8, rect.top - 190)}px`} onPointerDown=${(e) => e.stopPropagation()}>
     <div class="annpop-row">
-      ${(a.kind === 'hl' || (a.kind === 'ink' && a.tool === 'marker') ? HL_COLORS.map((c) => c.id) : INK_COLORS.map((c) => c.id)).map((col) => html`<button class=${cls('swatch', a.color === col && 'on')} style=${`--c:${col === 'ink' ? '#1d2320' : col}`} aria-label=${'Color ' + col} onClick=${() => commitAnn(a.id, { color: col })}></button>`)}
+      ${(a.kind === 'hl' || (a.kind === 'ink' && a.tool === 'marker') ? HL_COLORS.map((c) => c.id) : INK_COLORS.map((c) => c.id)).map((col) => html`<button class=${cls('swatch', a.color === col && 'on')} style=${`--c:${inkCss(col)}`} aria-label=${'Color ' + col} onClick=${() => commitAnn(a.id, { color: col })}></button>`)}
       <span class="spacer"></span>
       ${a.kind === 'hl' && html`<button class=${cls('fmt-btn', (a.style || 'highlight') === 'highlight' && 'on')} title="Highlight" onClick=${() => commitAnn(a.id, { style: 'highlight' })}><${Icon} name="highlight" size=${16} /></button>
         <button class=${cls('fmt-btn', a.style === 'underline' && 'on')} title="Underline" onClick=${() => commitAnn(a.id, { style: 'underline' })}><${Icon} name="underline" size=${16} /></button>`}

@@ -558,7 +558,15 @@ textarea.cv-edit { display: block; width: 100%; min-height: 100%; border: 0; out
 .cv-empty-title { font-size: 18px; font-weight: 600; color: var(--fg-2); margin: 0 0 4px; }
 
 /* ---------- PDF ---------- */
-.pdf-wrap { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; container-type: inline-size; }
+.pdf-wrap { --pdf-paper: #ffffff; --pdf-ink: #1d2320; position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; container-type: inline-size; }
+/* Dark pages: the rendered page is inverted (hue-rotated so colours stay recognisable);
+   annotations sit above it and keep their real colours. */
+.pdf-wrap.pdf-dark { --pdf-paper: #17191a; --pdf-ink: #e8ece9; }
+.pdf-dark .pdf-canvas { filter: invert(.91) hue-rotate(180deg); }
+.pdf-dark .pdf-hl.highlight rect, .pdf-dark .pdf-ann .mk { mix-blend-mode: screen; opacity: .42; }
+.pdf-dark .pdf-textbox:hover, .pdf-dark .pdf-textbox.sel { background: rgba(23, 25, 26, .7); }
+.pdf-dark textarea.pdf-textbox { background: rgba(23, 25, 26, .94); color-scheme: dark; }
+.pdf-dark .pdf-selbox { stroke: #4bc29a; }
 .pdf-toolbar { display: flex; align-items: center; gap: 4px; height: 44px; padding: 0 10px; border-bottom: 1px solid var(--line); flex: none; }
 .pageno { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--fg-2); font-variant-numeric: tabular-nums; margin-left: 4px; }
 .page-input { width: 44px; height: 28px; text-align: center; border: 1px solid var(--line-2); border-radius: 6px; background: var(--paper); outline: 0; font-variant-numeric: tabular-nums; }
@@ -592,7 +600,7 @@ textarea.cv-edit { display: block; width: 100%; min-height: 100%; border: 0; out
 .pdf-scroll.tool-hand { cursor: grab; }
 .pdf-scroll:not(.tool-select) .textLayer { pointer-events: none; }
 .pdf-pages { position: relative; margin: 0 auto; min-width: 100%; }
-.pdf-slot { position: absolute; left: 50%; transform: translateX(-50%); background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .1), 0 4px 18px rgba(0, 0, 0, .06); border-radius: 2px; }
+.pdf-slot { position: absolute; left: 50%; transform: translateX(-50%); background: var(--pdf-paper); box-shadow: 0 1px 3px rgba(0, 0, 0, .1), 0 4px 18px rgba(0, 0, 0, .06); border-radius: 2px; }
 .pdf-page { position: relative; user-select: none; }
 .tool-select .pdf-page { user-select: text; }
 .pdf-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }

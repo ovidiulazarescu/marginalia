@@ -5,7 +5,7 @@ import * as search from './search.js';
 import { sync, start as startSync, bootstrap as syncBootstrap, fetchFileBlob } from './sync.js';
 
 export const DEFAULT_SETTINGS = {
-  theme: 'system', editorFont: 'sans', editorWidth: 'normal', penOnly: true, sidebar: true,
+  theme: 'system', pdfTheme: 'light', editorFont: 'sans', editorWidth: 'normal', penOnly: true, sidebar: true,
   spellcheck: true, snapshotMinutes: 10, homeSections: { recent: true, pinned: true, edited: true, inbox: true, notebooks: true },
 };
 const newTab = (cur) => ({ id: uid('t'), cur, back: [], fwd: [] });
@@ -464,6 +464,9 @@ export function previousNote() {
 export const recentNotes = (k = 10) => liveNotes().sort((a, b) => (b.opened || 0) - (a.opened || 0)).slice(0, k);
 export function setWs(patch) { Object.assign(S.ws, patch); saveWs(); emit(); }
 export function setSettings(patch) { Object.assign(S.settings, patch); saveSettings(); applyTheme(); emit(); }
+export const appIsDark = () => S.settings.theme === 'dark' || (S.settings.theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+// PDF pages can be shown light, dark, or following the app theme.
+export const pdfIsDark = () => S.settings.pdfTheme === 'dark' || (S.settings.pdfTheme === 'auto' && appIsDark());
 export function applyTheme() {
   const t = S.settings.theme;
   if (t === 'system') delete document.documentElement.dataset.theme;

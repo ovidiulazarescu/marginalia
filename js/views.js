@@ -478,6 +478,7 @@ function Settings() {
     <section class="set-sec"><h2>Appearance</h2>
       <div class="set-row"><div><b>Theme</b></div><div class="seg">${opt('theme', 'system', 'System')}${opt('theme', 'light', 'Light')}${opt('theme', 'dark', 'Dark')}</div></div>
       <div class="set-row"><div><b>Writing font</b><p>Used for page notes.</p></div><div class="seg">${opt('editorFont', 'sans', 'Sans')}${opt('editorFont', 'serif', 'Serif')}${opt('editorFont', 'mono', 'Mono')}</div></div>
+      <div class="set-row"><div><b>PDF pages</b><p>Dark inverts the page colours for reading at night. Exports keep the original colours.</p></div><div class="seg">${opt('pdfTheme', 'light', 'Light')}${opt('pdfTheme', 'dark', 'Dark')}${opt('pdfTheme', 'auto', 'Match theme')}</div></div>
       <div class="set-row"><div><b>Page width</b></div><div class="seg">${opt('editorWidth', 'narrow', 'Narrow')}${opt('editorWidth', 'normal', 'Normal')}${opt('editorWidth', 'wide', 'Wide')}</div></div>
     </section>
     <section class="set-sec"><h2>Stylus and touch</h2>
