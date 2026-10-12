@@ -3,6 +3,7 @@
 import { html, useState, useRef, useEffect, useLayoutEffect, useMemo, loadPdfjs } from './lib.js';
 import { S, updateNote, getPdfDoc, open, createNote, flushAll, toast, flushers, emit, setSettings, pdfIsDark } from './store.js';
 import { openMenu } from './dialogs.js';
+import { darkenPage } from './pdfdark.js';
 import { strokePath, livePath, hitStroke, strokeBounds, round1, pointFromEvent, colorCss, INK_COLORS, HL_COLORS } from './ink.js';
 import { Icon } from './icons.js';
 import { uid, cls, clamp, mod, debounce, isTyping, escapeHtml, snippet, highlightTerms, MOD, SHIFT } from './util.js';
@@ -33,7 +34,7 @@ export function annBounds(a) {
   return { x, y, w: Math.max(...a.rects.map((r) => r[0] + r[2])) - x, h: Math.max(...a.rects.map((r) => r[1] + r[3])) - y };
 }
 
-function PdfPage({ doc, n, size, z, visible, anns, selId, findQ, editingId, setEditingId, commitAnn, removeAnn }) {
+function PdfPage({ doc, n, size, z, dark, visible, anns, selId, findQ, editingId, setEditingId, commitAnn, removeAnn }) {
   const canvas = useRef();
   const textRef = useRef();
   const task = useRef();
@@ -52,10 +53,11 @@ function PdfPage({ doc, n, size, z, visible, anns, selId, findQ, editingId, setE
         task.current?.cancel();
         task.current = page.render({ canvasContext: off.getContext('2d', { alpha: false }), viewport: vp });
         await task.current.promise;
-        if (cancelled || !c) return;
-        c.width = off.width; c.height = off.height;
-        c.getContext('2d').drawImage(off, 0, 0);
         const pdfjs = await loadPdfjs();
+        const shown = dark ? await darkenPage(page, vp, off, pdfjs.OPS) : off;
+        if (cancelled || !c) return;
+        c.width = shown.width; c.height = shown.height;
+        c.getContext('2d').drawImage(shown, 0, 0);
         const tl = textRef.current;
         if (!tl || cancelled) return;
         tl.innerHTML = '';
@@ -68,7 +70,7 @@ function PdfPage({ doc, n, size, z, visible, anns, selId, findQ, editingId, setE
       } catch (e) { if (e?.name !== 'RenderingCancelledException') console.warn(e); }
     }, 60);
     return () => { cancelled = true; clearTimeout(t); task.current?.cancel(); };
-  }, [visible, doc, z, findQ]);
+  }, [visible, doc, z, findQ, dark]);
   useEffect(() => { if (!visible && canvas.current) { canvas.current.width = 0; canvas.current.height = 0; if (textRef.current) textRef.current.innerHTML = ''; } }, [visible]);
 
   const w = size.w * z, h = size.h * z;
@@ -511,7 +513,7 @@ export function PdfView({ note }) {
         onPointerLeave=${(e) => { if (e.pointerType === 'pen' && !g.current) scroller.current.style.touchAction = ''; }}>
         ${!sizes ? html`<div class="pdf-loading">Opening PDF…</div>` : html`<div class="pdf-pages" style=${`height:${tops[tops.length - 1]}px;width:${maxW * z + 40}px`}>
           ${sizes.map((s, i) => html`<div class="pdf-slot" key=${i} style=${`top:${tops[i]}px;width:${s.w * z}px;height:${s.h * z}px`}>
-            ${vis.has(i + 1) && html`<${PdfPage} doc=${doc} n=${i + 1} size=${s} z=${z} visible=${true} anns=${pageAnn(i + 1)} selId=${selId} findQ=${side === 'find' ? findQ.trim() : ''}
+            ${vis.has(i + 1) && html`<${PdfPage} doc=${doc} n=${i + 1} size=${s} z=${z} dark=${dark} visible=${true} anns=${pageAnn(i + 1)} selId=${selId} findQ=${side === 'find' ? findQ.trim() : ''}
               editingId=${editingId} setEditingId=${setEditingId} commitAnn=${commitAnn} removeAnn=${removeAnn} />`}
           </div>`)}
         </div>`}

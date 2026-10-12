@@ -559,10 +559,9 @@ textarea.cv-edit { display: block; width: 100%; min-height: 100%; border: 0; out
 
 /* ---------- PDF ---------- */
 .pdf-wrap { --pdf-paper: #ffffff; --pdf-ink: #1d2320; position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; container-type: inline-size; }
-/* Dark pages: the rendered page is inverted (hue-rotated so colours stay recognisable);
-   annotations sit above it and keep their real colours. */
+/* Dark pages: js/pdfdark.js renders text and background light-on-dark and keeps
+   embedded images in their original colours; annotations keep their real colours. */
 .pdf-wrap.pdf-dark { --pdf-paper: #17191a; --pdf-ink: #e8ece9; }
-.pdf-dark .pdf-canvas { filter: invert(.91) hue-rotate(180deg); }
 .pdf-dark .pdf-hl.highlight rect, .pdf-dark .pdf-ann .mk { mix-blend-mode: screen; opacity: .42; }
 .pdf-dark .pdf-textbox:hover, .pdf-dark .pdf-textbox.sel { background: rgba(23, 25, 26, .7); }
 .pdf-dark textarea.pdf-textbox { background: rgba(23, 25, 26, .94); color-scheme: dark; }
