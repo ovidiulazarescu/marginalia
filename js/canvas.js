@@ -3,7 +3,8 @@ import { html, useState, useRef, useEffect, useLayoutEffect, useMemo } from './l
 import { S, updateNote, open, pickNote, findByTitle, toast, importPdf, flushers } from './store.js';
 import { strokePath, livePath, hitStroke, strokeBounds, round1, pointFromEvent, colorCss, INK_COLORS, HL_COLORS } from './ink.js';
 import { Icon, typeIcon } from './icons.js';
-import { uid, cls, clamp, mod, imageToDataURL, pickFiles, debounce, isTyping, MOD, SHIFT } from './util.js';
+import { uid, cls, clamp, mod, imageToDataURL, pickFiles, debounce, isTyping, openExternal, MOD, SHIFT } from './util.js';
+import { cleanUrl, hrefFor } from './md.js';
 import { openMenu } from './dialogs.js';
 
 export const CARD_COLORS = ['none', 'yellow', 'green', 'blue', 'pink', 'purple', 'gray'];
@@ -44,10 +45,18 @@ export function contentBounds(doc) {
 
 function RichText({ text }) {
   const parts = [];
-  const re = /\[\[([^\]\n]+)\]\]/g;
+  const re = /\[\[([^\]\n]+)\]\]|\b((?:https?:\/\/|www\.)[^\s<>"'`]+)/gi;
   let last = 0, m;
   while ((m = re.exec(text))) {
     if (m.index > last) parts.push(text.slice(last, m.index));
+    if (m[2]) {
+      // Web address: opens in a new tab.
+      const url = cleanUrl(m[2]);
+      parts.push(html`<a class="cv-link url" href=${hrefFor(url)} title=${hrefFor(url) + ' (opens in a new tab)'} onPointerDown=${(e) => e.stopPropagation()} onClick=${(e) => { e.preventDefault(); e.stopPropagation(); openExternal(hrefFor(url)); }}>${url}</a>`);
+      last = m.index + url.length;
+      re.lastIndex = last;
+      continue;
+    }
     const n = findByTitle(m[1]);
     parts.push(html`<a class=${cls('cv-link', !n && 'missing')} onPointerDown=${(e) => e.stopPropagation()} onClick=${(e) => { e.stopPropagation(); if (n) open(n.id, { split: mod(e) }); else toast(`No note named “${m[1]}” yet`); }}>${m[1]}</a>`);
     last = m.index + m[0].length;

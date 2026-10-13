@@ -182,3 +182,10 @@ export function highlightTerms(text, terms) {
 }
 
 export const today = () => new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+
+// Opens a web address in a new browser tab without giving it access to this page.
+export function openExternal(url) {
+  const a = document.createElement('a');
+  a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+  document.body.appendChild(a); a.click(); a.remove();
+}

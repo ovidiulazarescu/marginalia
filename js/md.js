@@ -279,3 +279,48 @@ export function detectCode(text) {
   if (indented >= 0.3 || share(/[{};]\s*$/) >= 0.5) return '';
   return null;
 }
+
+/* ---------- web links ---------- */
+// Matches http(s) and www. addresses; trailing punctuation is trimmed by cleanUrl.
+export const URL_RE = /\b(?:https?:\/\/|www\.)[^\s<>"'`]+/gi;
+export function cleanUrl(raw) {
+  let u = raw.replace(/[.,;:!?'"*]+$/, '');
+  // Keep a closing bracket only when the URL opened one, as in Wikipedia links.
+  while (/[)\]]$/.test(u) && (u.match(/[(\[]/g) || []).length < (u.match(/[)\]]/g) || []).length) u = u.slice(0, -1);
+  return u;
+}
+export const hrefFor = (u) => (/^https?:\/\//i.test(u) ? u : 'https://' + u);
+
+// Wraps plain-text URLs in links, skipping existing links, code and sketches. Returns how many were added.
+export function linkifyElement(root) {
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: (n) => (n.parentElement?.closest('a, code, pre, .ink-block, [data-ui]') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+  });
+  const nodes = [];
+  let n;
+  while ((n = w.nextNode())) { URL_RE.lastIndex = 0; if (URL_RE.test(n.data)) nodes.push(n); }
+  let count = 0;
+  for (const node of nodes) {
+    URL_RE.lastIndex = 0;
+    const text = node.data;
+    const frag = document.createDocumentFragment();
+    let last = 0, m;
+    while ((m = URL_RE.exec(text))) {
+      const url = cleanUrl(m[0]);
+      if (!/\.[a-z]{2,}|localhost|\d+\.\d+\.\d+\.\d+/i.test(url)) continue;
+      frag.append(text.slice(last, m.index));
+      const a = document.createElement('a');
+      a.href = hrefFor(url);
+      a.textContent = url;
+      frag.append(a);
+      last = m.index + url.length;
+      URL_RE.lastIndex = last;
+      count++;
+    }
+    if (last === 0) continue;
+    frag.append(text.slice(last));
+    node.replaceWith(frag);
+  }
+  URL_RE.lastIndex = 0;
+  return count;
+}

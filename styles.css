@@ -707,3 +707,4 @@ textarea.pdf-textbox { border: 1px solid #0f7b5f; background: rgba(255, 255, 255
 .token-form { display: flex; gap: 6px; flex: none; }
 .token-form .input { width: 180px; height: 29px; }
 .set-note code { font: 12.5px var(--font-mono); background: var(--sunk); padding: 1px 5px; border-radius: 4px; }
+.cv-link.url { font-weight: 500; word-break: break-all; }

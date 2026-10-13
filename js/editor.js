@@ -3,9 +3,9 @@
 import { html, useEffect, useRef, useState, useMemo, useLayoutEffect } from './lib.js';
 import { S, updateNote, open, createNote, findByTitle, flushers, pickNote, toast, liveNotes } from './store.js';
 import { hydrateInk, newInkBlockHTML } from './ink.js';
-import { sanitizeHTML, mdToHTML, looksLikeMarkdown, detectCode, preText, CODE_LANGS } from './md.js';
+import { sanitizeHTML, mdToHTML, looksLikeMarkdown, detectCode, preText, CODE_LANGS, linkifyElement, cleanUrl, hrefFor } from './md.js';
 import { openMenu, promptDialog } from './dialogs.js';
-import { imageToDataURL, mod, debounce, fuzzyScore, escapeHtml, pickFiles, cls, MOD, ALT, SHIFT } from './util.js';
+import { imageToDataURL, mod, debounce, fuzzyScore, escapeHtml, pickFiles, cls, openExternal, MOD, ALT, SHIFT } from './util.js';
 import { Icon, typeIcon } from './icons.js';
 
 const BLOCKS = new Set(['P', 'H1', 'H2', 'H3', 'LI', 'BLOCKQUOTE', 'PRE', 'DIV', 'TD', 'TH']);
@@ -120,6 +120,8 @@ export function PageEditor({ note, pane, crumbs, actions }) {
   const hydrate = (root) => {
     root.querySelectorAll('.ink-block').forEach((b) => hydrateInk(b, { onChange: save, penOnly: () => S.settings.penOnly }));
     root.querySelectorAll('img').forEach((i) => (i.draggable = false));
+    linkifyElement(root);
+    root.querySelectorAll('a[href]:not(.wikilink)').forEach((a) => (a.title = `${a.getAttribute('href')} (opens in a new tab)`));
     const last = root.lastElementChild;
     if (last && /^(PRE|TABLE)$/.test(last.tagName) || last?.classList?.contains('ink-block')) { const p = document.createElement('p'); p.innerHTML = '<br>'; root.append(p); }
   };
@@ -294,6 +296,46 @@ export function PageEditor({ note, pane, crumbs, actions }) {
   const copyCode = (pre) => navigator.clipboard?.writeText(preText(pre)).then(() => toast('Code copied'), () => toast('Copying is blocked here. Select the code and press ⌘C.'));
 
   /* ---- web links ---- */
+  // Turns the URL just before the caret into a link (after typing a space, or before Enter).
+  const autolinkBeforeCaret = (spaceTyped) => {
+    const s = getSelection();
+    if (!s.rangeCount || !s.isCollapsed) return;
+    const r = s.getRangeAt(0);
+    const tn = r.startContainer;
+    if (tn.nodeType !== 3 || tn.parentElement.closest('a, code, pre')) return;
+    const caret = r.startOffset;
+    const before = tn.data.slice(0, caret - (spaceTyped ? 1 : 0));
+    const m = before.match(/(?:^|[\s(\u00a0])((?:https?:\/\/|www\.)[^\s<>"'`\u00a0]+)$/i);
+    if (!m) return;
+    const url = cleanUrl(m[1]);
+    if (!/\.[a-z]{2,}|localhost|\d+\.\d+\.\d+\.\d+/i.test(url)) return;
+    const start = before.length - m[1].length, end = start + url.length;
+    const rr = document.createRange();
+    rr.setStart(tn, start); rr.setEnd(tn, end);
+    selectRange(rr);
+    let a = null;
+    if (exec('createLink', hrefFor(url))) {
+      const sel = getSelection();
+      const at = sel.anchorNode && (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement);
+      a = at?.closest('a');
+    }
+    if (!a) {
+      // The editing command can be refused (for example while another edit is in progress): wrap it directly.
+      a = document.createElement('a');
+      a.href = hrefFor(url);
+      rr.surroundContents(a);
+    }
+    {
+      a.title = `${a.getAttribute('href')} (opens in a new tab)`;
+      const cr = document.createRange();
+      const next = a.nextSibling;
+      if (next && next.nodeType === 3) cr.setStart(next, Math.min(next.length, caret - end)); else cr.setStartAfter(a);
+      cr.collapse(true);
+      selectRange(cr);
+    }
+    changed();
+  };
+
   const editWebLink = async () => {
     const range = savedRange.current;
     const at = range && (range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentElement);
@@ -438,6 +480,7 @@ export function PageEditor({ note, pane, crumbs, actions }) {
         }
       }
     }
+    if (e.inputType === 'insertText' && / $/.test(e.data || '')) autolinkBeforeCaret(true);
     checkPopups();
     changed();
   };
@@ -469,6 +512,7 @@ export function PageEditor({ note, pane, crumbs, actions }) {
       if (outer) { const np = document.createElement('p'); np.innerHTML = '<br>'; outer.after(np); const rr = document.createRange(); rr.setStart(np, 0); selectRange(rr); changed(); }
       return;
     }
+    if (e.key === 'Enter' && blk && !blk.closest('pre')) autolinkBeforeCaret(false);
     if (e.key === 'Enter' && !e.shiftKey && blk) {
       if (blk.closest('pre')) {
         // Keep the current line's indentation, plus one level after "key:", "{", "[" or "(".
@@ -526,7 +570,7 @@ export function PageEditor({ note, pane, crumbs, actions }) {
       if (id) {
         if (!S.notes.has(id) || S.notes.get(id).trashed) { toast('That note no longer exists.'); return; }
         open(id, { split: mod(e) || e.shiftKey, page: a.dataset.page ? +a.dataset.page : undefined });
-      } else if (a.href) window.open(a.href, '_blank', 'noopener');
+      } else if (a.getAttribute('href')) openExternal(a.href);
       return;
     }
     const li = e.target.closest('ul.tasks > li');
@@ -556,10 +600,19 @@ export function PageEditor({ note, pane, crumbs, actions }) {
       toast(lang ? `Pasted as a ${lang.toUpperCase()} code block` : 'Pasted as a code block', { label: 'Paste as text', run: () => { undo(); } });
       return;
     }
+    const lone = t && t.trim().match(/^(?:https?:\/\/|www\.)\S+$/i) ? cleanUrl(t.trim()) : null;
+    if (lone) {
+      e.preventDefault();
+      const sel = getSelection();
+      if (sel.rangeCount && !sel.isCollapsed && !sel.getRangeAt(0).toString().includes('\n')) exec('createLink', hrefFor(lone)); // link the selected words
+      else exec('insertHTML', `<a href="${escapeHtml(hrefFor(lone))}">${escapeHtml(lone)}</a>&nbsp;`);
+      hydrate(ed.current); changed();
+      return;
+    }
     if (h) { e.preventDefault(); exec('insertHTML', sanitizeHTML(h)); hydrate(ed.current); changed(); return; }
-    if (t && looksLikeMarkdown(t)) { e.preventDefault(); exec('insertHTML', mdToHTML(t, findByTitle)); changed(); return; }
-    // Plain multi-line text: one paragraph per line, leading spaces kept.
-    if (t && (t.includes('\n') || /^[ \t]/.test(t))) { e.preventDefault(); exec('insertHTML', textToParagraphs(t)); changed(); }
+    if (t && looksLikeMarkdown(t)) { e.preventDefault(); exec('insertHTML', mdToHTML(t, findByTitle)); hydrate(ed.current); changed(); return; }
+    // Plain text: one paragraph per line, leading spaces kept, web addresses linked.
+    if (t && (t.includes('\n') || /^[ \t]/.test(t) || /(https?:\/\/|www\.)/i.test(t))) { e.preventDefault(); exec('insertHTML', textToParagraphs(t)); hydrate(ed.current); changed(); }
   };
   const onDrop = (e) => {
     const files = [...(e.dataTransfer?.files || [])].filter((f) => f.type.startsWith('image/'));
@@ -660,7 +713,7 @@ export function PageEditor({ note, pane, crumbs, actions }) {
         <${NoteMeta} note=${note} />
         <div ref=${ed} class="editor prose" contenteditable="true" spellcheck=${S.settings.spellcheck} data-placeholder="Write, or type / for blocks and [[ to link a note"
           onInput=${onInput} onKeyDown=${onKeyDown} onKeyUp=${onKeyUp} onClick=${onClick} onPaste=${onPaste} onDrop=${onDrop}
-          onBlur=${() => setTimeout(() => setPopup(null), 150)}></div>
+          onBlur=${() => { setTimeout(() => setPopup(null), 150); if (linkifyElement(ed.current)) { hydrate(ed.current); changed(); } }}></div>
         ${codeBar && codeBar.pre.isConnected && html`<div class="code-bar" style=${`top:${codeBar.top + 6}px`} onMouseDown=${(e) => e.preventDefault()}>
           <button class="code-lang" title="Language" onClick=${(e) => openMenu(e, [{ label: 'Plain text', checked: !codeBar.lang, run: () => setLang(codeBar.pre, '') }, '-', ...CODE_LANGS.map((l) => ({ label: LANG_NAMES[l] || l, checked: codeBar.lang === l, run: () => setLang(codeBar.pre, l) }))], { align: 'right' })}>
             ${codeBar.lang ? LANG_NAMES[codeBar.lang] || codeBar.lang : 'Plain text'}<${Icon} name="chevronDown" size=${13} /></button>
