@@ -269,7 +269,21 @@ button.chip:hover { color: var(--fg); background: var(--line); }
 .prose a.wikilink:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
 .prose a.wikilink[data-page]::after { content: ' ↗'; font-size: .8em; opacity: .7; }
 .prose hr { border: 0; border-top: 1px solid var(--line-2); margin: 2em 0; }
-.prose img { max-width: 100%; border-radius: 8px; display: block; }
+.prose img { max-width: 100%; height: auto; border-radius: 8px; display: block; cursor: pointer; }
+.prose img[data-align="center"] { margin-left: auto; margin-right: auto; }
+
+/* selected image: resize handles and size bar */
+.img-frame { position: absolute; z-index: 6; pointer-events: none; border: 2px solid var(--accent); border-radius: 9px; }
+.img-handle { position: absolute; top: 50%; width: 12px; height: 44px; margin-top: -22px; border-radius: 6px; background: var(--paper); border: 2px solid var(--accent); box-shadow: var(--shadow); pointer-events: auto; cursor: ew-resize; touch-action: none; }
+.img-handle.l { left: -8px; }
+.img-handle.r { right: -8px; }
+.img-size { position: absolute; right: 8px; bottom: 8px; padding: 2px 7px; border-radius: 6px; background: rgba(0, 0, 0, .62); color: #fff; font: 600 11.5px var(--font-ui); font-variant-numeric: tabular-nums; }
+.img-bar { position: absolute; z-index: 7; transform: translateX(-50%); display: flex; align-items: center; gap: 2px; padding: 3px; border-radius: 10px; background: var(--paper); border: 1px solid var(--line); box-shadow: var(--shadow-lg); white-space: nowrap; }
+.img-btn { height: 28px; padding: 0 9px; border-radius: 7px; font-size: 12.5px; font-weight: 550; color: var(--fg-2); font-variant-numeric: tabular-nums; }
+.img-btn:hover { background: var(--hover); color: var(--fg); }
+.img-btn.on { background: var(--accent-soft); color: var(--accent); }
+.img-btn.icon { display: grid; place-items: center; width: 30px; padding: 0; }
+.img-bar .sep { width: 1px; height: 18px; background: var(--line); margin: 0 3px; }
 .prose table { border-collapse: collapse; width: 100%; font-size: .93em; display: block; overflow-x: auto; }
 .prose th, .prose td { border: 1px solid var(--line); padding: 7px 10px; vertical-align: top; min-width: 80px; text-align: left; }
 .prose th { background: var(--sunk); font-weight: 600; }

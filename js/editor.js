@@ -104,6 +104,7 @@ export function PageEditor({ note, pane, crumbs, actions }) {
   const [popup, setPopup] = useState(null);
   const [fmt, setFmt] = useState(null);
   const [codeBar, setCodeBar] = useState(null);
+  const [imgSel, setImgSel] = useState(null);
   const [, setTick] = useState(0);
   const savedRange = useRef(null);
   const pop = useRef(null);
@@ -119,7 +120,10 @@ export function PageEditor({ note, pane, crumbs, actions }) {
 
   const hydrate = (root) => {
     root.querySelectorAll('.ink-block').forEach((b) => hydrateInk(b, { onChange: save, penOnly: () => S.settings.penOnly }));
-    root.querySelectorAll('img').forEach((i) => (i.draggable = false));
+    root.querySelectorAll('img').forEach((i) => {
+      i.draggable = false;
+      i.style.width = i.dataset.w ? i.dataset.w + '%' : '';
+    });
     linkifyElement(root);
     root.querySelectorAll('a[href]:not(.wikilink)').forEach((a) => (a.title = `${a.getAttribute('href')} (opens in a new tab)`));
     const last = root.lastElementChild;
@@ -220,6 +224,65 @@ export function PageEditor({ note, pane, crumbs, actions }) {
     exec('insertHTML', `<code>${escapeHtml(s.toString())}</code>​`);
     changed();
   };
+
+  /* ---- images: click to select, then resize, align or delete ---- */
+  const placeImg = (img) => {
+    const doc = ed.current?.parentElement;
+    if (!img?.isConnected || !doc) { setImgSel(null); return; }
+    const r = img.getBoundingClientRect(), d = doc.getBoundingClientRect();
+    setImgSel({ img, top: r.top - d.top, left: r.left - d.left, width: r.width, height: r.height, pct: Number(img.dataset.w) || null, center: img.dataset.align === 'center' });
+  };
+  const setImgSize = (img, pct) => {
+    if (pct) { img.dataset.w = String(pct); img.style.width = pct + '%'; }
+    else { delete img.dataset.w; img.style.width = ''; }
+    changed();
+    requestAnimationFrame(() => placeImg(img));
+  };
+  const toggleImgAlign = (img) => {
+    if (img.dataset.align === 'center') delete img.dataset.align; else img.dataset.align = 'center';
+    changed();
+    requestAnimationFrame(() => placeImg(img));
+  };
+  const deleteImg = (img) => {
+    const parent = img.parentElement;
+    img.remove();
+    if (parent && parent !== ed.current && !parent.textContent.trim() && !parent.querySelector('img')) parent.innerHTML = '<br>';
+    setImgSel(null);
+    changed();
+  };
+  // Dragging a side handle resizes the image, keeping its proportions.
+  const startImgResize = (e, side) => {
+    e.preventDefault(); e.stopPropagation();
+    const img = imgSel?.img;
+    if (!img) return;
+    const handle = e.currentTarget;
+    handle.setPointerCapture(e.pointerId);
+    const colW = ed.current.clientWidth, startW = img.getBoundingClientRect().width, x0 = e.clientX;
+    const centered = img.dataset.align === 'center';
+    const move = (ev) => {
+      let dx = (ev.clientX - x0) * (side === 'l' ? -1 : 1);
+      if (centered) dx *= 2; // a centred image grows on both sides
+      const pct = Math.round((Math.max(40, Math.min(colW, startW + dx)) / colW) * 100);
+      img.dataset.w = String(pct);
+      img.style.width = pct + '%';
+      placeImg(img);
+    };
+    const up = () => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', up);
+      handle.removeEventListener('pointercancel', up);
+      changed();
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+    handle.addEventListener('pointercancel', up);
+  };
+  useEffect(() => {
+    if (!imgSel) return;
+    const onResize = () => placeImg(imgSel.img);
+    addEventListener('resize', onResize);
+    return () => removeEventListener('resize', onResize);
+  }, [imgSel?.img]);
 
   /* ---- code blocks ---- */
   const preAtCaret = () => {
@@ -487,6 +550,11 @@ export function PageEditor({ note, pane, crumbs, actions }) {
 
   /* ---- keys ---- */
   const onKeyDown = (e) => {
+    if (imgSel) {
+      if (e.key === 'Backspace' || e.key === 'Delete') { e.preventDefault(); deleteImg(imgSel.img); return; }
+      if (e.key === 'Escape') { e.preventDefault(); setImgSel(null); return; }
+      setImgSel(null);
+    }
     const p = pop.current;
     if (p) {
       const items = p.kind === 'slash' ? slashItems(p.q) : linkItems(p.q);
@@ -563,6 +631,8 @@ export function PageEditor({ note, pane, crumbs, actions }) {
   const onKeyUp = (e) => { if (/Arrow|Home|End/.test(e.key)) checkPopups(); };
 
   const onClick = (e) => {
+    if (e.target.tagName === 'IMG' && ed.current.contains(e.target)) { e.preventDefault(); placeImg(e.target); return; }
+    if (imgSel) setImgSel(null);
     const a = e.target.closest('a');
     if (a) {
       e.preventDefault();
@@ -714,6 +784,19 @@ export function PageEditor({ note, pane, crumbs, actions }) {
         <div ref=${ed} class="editor prose" contenteditable="true" spellcheck=${S.settings.spellcheck} data-placeholder="Write, or type / for blocks and [[ to link a note"
           onInput=${onInput} onKeyDown=${onKeyDown} onKeyUp=${onKeyUp} onClick=${onClick} onPaste=${onPaste} onDrop=${onDrop}
           onBlur=${() => { setTimeout(() => setPopup(null), 150); if (linkifyElement(ed.current)) { hydrate(ed.current); changed(); } }}></div>
+        ${imgSel && imgSel.img.isConnected && html`
+          <div class="img-frame" style=${`top:${imgSel.top}px;left:${imgSel.left}px;width:${imgSel.width}px;height:${imgSel.height}px`}>
+            <span class="img-handle l" title="Drag to resize" onPointerDown=${(e) => startImgResize(e, 'l')}></span>
+            <span class="img-handle r" title="Drag to resize" onPointerDown=${(e) => startImgResize(e, 'r')}></span>
+            <span class="img-size">${imgSel.pct ? imgSel.pct + '%' : 'Original size'}</span>
+          </div>
+          <div class="img-bar" style=${`top:${imgSel.height > 90 ? imgSel.top + 8 : Math.max(0, imgSel.top - 44)}px;left:${Math.max(215, Math.min((ed.current?.clientWidth || 700) - 215, imgSel.left + imgSel.width / 2))}px`} onMouseDown=${(e) => e.preventDefault()}>
+            ${[25, 50, 75, 100].map((p) => html`<button class=${cls('img-btn', imgSel.pct === p && 'on')} title=${`${p}% of the page width`} onClick=${() => setImgSize(imgSel.img, p)}>${p === 100 ? 'Full' : p + '%'}</button>`)}
+            <button class=${cls('img-btn', !imgSel.pct && 'on')} title="Original size" onClick=${() => setImgSize(imgSel.img, null)}>Original</button>
+            <span class="sep"></span>
+            <button class=${cls('img-btn', imgSel.center && 'on')} title=${imgSel.center ? 'Align left' : 'Centre'} onClick=${() => toggleImgAlign(imgSel.img)}>${imgSel.center ? 'Left' : 'Centre'}</button>
+            <button class="img-btn icon" title="Delete image" aria-label="Delete image" onClick=${() => deleteImg(imgSel.img)}><${Icon} name="trash" size=${15} /></button>
+          </div>`}
         ${codeBar && codeBar.pre.isConnected && html`<div class="code-bar" style=${`top:${codeBar.top + 6}px`} onMouseDown=${(e) => e.preventDefault()}>
           <button class="code-lang" title="Language" onClick=${(e) => openMenu(e, [{ label: 'Plain text', checked: !codeBar.lang, run: () => setLang(codeBar.pre, '') }, '-', ...CODE_LANGS.map((l) => ({ label: LANG_NAMES[l] || l, checked: codeBar.lang === l, run: () => setLang(codeBar.pre, l) }))], { align: 'right' })}>
             ${codeBar.lang ? LANG_NAMES[codeBar.lang] || codeBar.lang : 'Plain text'}<${Icon} name="chevronDown" size=${13} /></button>

@@ -21,6 +21,8 @@ function pageBodyHTML(n) {
   body.querySelectorAll('.ink-block').forEach((b) => { const f = document.createElement('figure'); f.className = 'sketch'; f.innerHTML = inkSVGString(b.getAttribute('data-ink'), true); b.replaceWith(f); });
   body.querySelectorAll('a.wikilink').forEach((a) => { const s = document.createElement('span'); s.className = 'wikilink'; s.textContent = a.textContent; a.replaceWith(s); });
   body.querySelectorAll('ul.tasks > li').forEach((li) => li.insertAdjacentHTML('afterbegin', li.getAttribute('data-checked') === 'true' ? '☑ ' : '☐ '));
+  body.querySelectorAll('img[data-w]').forEach((i) => { i.style.width = i.getAttribute('data-w') + '%'; });
+  body.querySelectorAll('img[data-align="center"]').forEach((i) => { i.style.margin = '0 auto'; });
   return body.innerHTML;
 }
 const EXPORT_CSS = `body{font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;color:#1d2320;max-width:720px;margin:48px auto;padding:0 24px}
@@ -28,7 +30,7 @@ h1{font-size:2em;line-height:1.2;margin:0 0 .2em}h2{font-size:1.45em;margin:1.6e
 .meta{color:#6b746f;font-size:13px;margin-bottom:2em}blockquote{border-left:3px solid #cfd6d1;margin:1em 0;padding:.1em 1em;color:#4e5a53}
 pre{background:#f2f4f2;padding:12px 14px;border-radius:8px;overflow:auto;font:13px/1.5 ui-monospace,Menlo,monospace}code{background:#f2f4f2;padding:.1em .35em;border-radius:4px;font:.9em ui-monospace,Menlo,monospace}
 pre code{background:none;padding:0}mark{background:#ffe58a;padding:0 .1em}.wikilink{color:#0f7b5f;font-weight:500}ul.tasks{list-style:none;padding-left:.4em}
-.callout{background:#eef6f2;border-radius:8px;padding:.6em 1em;margin:1em 0}table{border-collapse:collapse}td,th{border:1px solid #dfe3e0;padding:6px 10px}img,svg{max-width:100%;height:auto}
+.callout{background:#eef6f2;border-radius:8px;padding:.6em 1em;margin:1em 0}table{border-collapse:collapse}td,th{border:1px solid #dfe3e0;padding:6px 10px}img,svg{max-width:100%;height:auto}img{display:block}
 figure.sketch{margin:1em 0;border:1px solid #e3e7e4;border-radius:8px}hr{border:0;border-top:1px solid #e3e7e4;margin:2em 0}@media print{body{margin:0}}`;
 export function pageToHTMLDoc(n) {
   const meta = [n.notebookId && nbPathString(n.notebookId), n.tags?.map((t) => '#' + t).join(' '), new Date(n.updated).toLocaleDateString()].filter(Boolean).join(' · ');
