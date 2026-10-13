@@ -68,6 +68,10 @@ function copyChildren(from, to) {
     } else if (tag === 'UL' && c.classList.contains('tasks')) el.className = 'tasks';
     else if (tag === 'LI' && c.hasAttribute('data-checked')) el.setAttribute('data-checked', c.getAttribute('data-checked') === 'true' ? 'true' : 'false');
     else if (tag === 'OL' && c.getAttribute('start')) el.setAttribute('start', c.getAttribute('start'));
+    else if (tag === 'PRE') {
+      const lang = c.getAttribute('data-lang') || (c.querySelector('code[class*="language-"]')?.className.match(/language-([\w#+.-]+)/) || [])[1];
+      if (lang && /^[\w#+.-]{1,20}$/.test(lang)) el.setAttribute('data-lang', lang.toLowerCase());
+    }
     else if ((tag === 'TD' || tag === 'TH') && c.getAttribute('colspan')) el.setAttribute('colspan', c.getAttribute('colspan'));
     else if (tag === 'LI' && c.querySelector(':scope > input[type=checkbox]')) el.setAttribute('data-checked', c.querySelector('input').checked ? 'true' : 'false');
     copyChildren(c, el);
@@ -109,10 +113,11 @@ export function mdToHTML(md, resolve) {
   while (i < lines.length) {
     const l = lines[i];
     if (/^```/.test(l)) {
+      const lang = (l.match(/^```\s*([\w#+.-]{1,20})/) || [])[1];
       const buf = []; i++;
       while (i < lines.length && !/^```/.test(lines[i])) buf.push(lines[i++]);
       i++;
-      out.push(`<pre>${escapeHtml(buf.join('\n'))}</pre>`);
+      out.push(`<pre${lang ? ` data-lang="${lang.toLowerCase()}"` : ''}>${escapeHtml(buf.join('\n'))}</pre>`);
       continue;
     }
     let m;
@@ -224,7 +229,7 @@ export function htmlToMarkdown(html, { titleOf = () => null, ink = () => '' } = 
       else if (t === 'P') s += inline(c).trim() + '\n\n';
       else if (t === 'UL' || t === 'OL') s += list(c, 0) + '\n';
       else if (t === 'BLOCKQUOTE') s += block(c).trim().split('\n').map((l) => '> ' + l).join('\n') + '\n\n';
-      else if (t === 'PRE') { const cl = c.cloneNode(true); cl.querySelectorAll('br').forEach((b) => b.replaceWith('\n')); s += '```\n' + cl.textContent.replace(/\n$/, '') + '\n```\n\n'; }
+      else if (t === 'PRE') s += '```' + (c.getAttribute('data-lang') || '') + '\n' + preText(c).replace(/\n$/, '') + '\n```\n\n';
       else if (t === 'HR') s += '---\n\n';
       else if (t === 'TABLE') {
         const rows = [...c.querySelectorAll('tr')].map((r) => '| ' + [...r.children].map((x) => inline(x).trim().replace(/\|/g, '\\|').replace(/ {2}\n/g, ' ')).join(' | ') + ' |');
@@ -239,4 +244,38 @@ export function htmlToMarkdown(html, { titleOf = () => null, ink = () => '' } = 
     return s;
   };
   return block(body).replace(/\n{3,}/g, '\n\n').trim() + '\n';
+}
+
+/* ---------- code ---------- */
+// Text of a code block: <br> and newline characters both count as line breaks.
+export function preText(pre) {
+  const c = pre.cloneNode(true);
+  c.querySelectorAll('br').forEach((b) => b.replaceWith('\n'));
+  return c.textContent.replace(/\u200b/g, '').replace(/\u00a0/g, ' ');
+}
+
+export const CODE_LANGS = ['yaml', 'json', 'bash', 'hcl', 'python', 'javascript', 'typescript', 'sql', 'html', 'css', 'xml', 'markdown', 'go', 'java', 'c', 'dockerfile', 'ini', 'toml'];
+
+// Guesses whether pasted plain text is code, and which language. Returns '' for
+// "code, language unknown" and null for ordinary prose.
+export function detectCode(text) {
+  const t = text.replace(/\r\n?/g, '\n').replace(/\n+$/, '');
+  const lines = t.split('\n').filter((l) => l.trim());
+  if (lines.length < 2) return null;
+  if (/^\s*```/m.test(t)) return null; // Markdown with fenced code: let the Markdown importer handle it
+  const share = (re) => lines.filter((l) => re.test(l)).length / lines.length;
+  const indented = share(/^[ \t]+\S/);
+  if (/^\s*[{[]/.test(t) && /[}\]]\s*$/.test(t)) { try { JSON.parse(t); return 'json'; } catch {} }
+  const keyLines = share(/^\s*(- )?["']?[\w.\-/$]+["']?:(\s|$)/);
+  const yamlish = share(/^\s*(- )?["']?[\w.\-/$]+["']?:(\s|$)|^\s*- \S|^\s*#|^---\s*$|^\.\.\.\s*$/);
+  if (keyLines >= 0.4 && yamlish >= 0.85 && (indented > 0 || /^---/.test(t))) return 'yaml';
+  if (share(/^\s*(resource|data|variable|output|provider|module|locals|terraform)\s+("|\{)/) > 0 && /[{}]/.test(t)) return 'hcl';
+  if (/^#!.*\b(ba|z)?sh\b/.test(t) || share(/^\s*(\$ |sudo |cd |ls |git |npm |docker |kubectl |terraform |export |echo |curl |apt |brew )/) >= 0.5) return 'bash';
+  if (share(/^\s*(def |class |import |from \S+ import|if __name__)/) > 0 && share(/:\s*$/) > 0) return 'python';
+  if (share(/^\s*(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|WITH)\b/i) > 0 && /;\s*$/.test(t)) return 'sql';
+  if (share(/^\s*(FROM|RUN|COPY|CMD|ENTRYPOINT|WORKDIR|ENV|EXPOSE)\s/) >= 0.4) return 'dockerfile';
+  if (share(/^\s*(const|let|var|function|import|export|return)\b|=>|;\s*$/) >= 0.4) return /:\s*(string|number|boolean)\b|interface\s/.test(t) ? 'typescript' : 'javascript';
+  if (share(/^\s*<[\w!/]/) >= 0.6) return /<!doctype html|<html|<div|<body/i.test(t) ? 'html' : 'xml';
+  if (indented >= 0.3 || share(/[{};]\s*$/) >= 0.5) return '';
+  return null;
 }

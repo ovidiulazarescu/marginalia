@@ -88,6 +88,8 @@ const P = {
   cloud: '<path d="M7 18.5a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 17.9 8.6 4.5 4.5 0 0 1 17.5 18.5z"/>',
   cloudOff: '<path d="M7 18.5a4.5 4.5 0 0 1-.6-8.96M9.5 6.2A6 6 0 0 1 17.9 8.6a4.5 4.5 0 0 1 2.4 8.2M17 18.5H7"/><path d="m3 3 18 18"/>',
   refresh: '<path d="M20 11a8 8 0 0 0-14.6-4.5L3 9"/><path d="M3 4v5h5"/><path d="M4 13a8 8 0 0 0 14.6 4.5L21 15"/><path d="M21 20v-5h-5"/>',
+  indent: '<path d="M10 6h11M10 12h11M10 18h11"/><path d="m3 9 3 3-3 3"/>',
+  outdent: '<path d="M10 6h11M10 12h11M10 18h11"/><path d="M6 9 3 12l3 3"/>',
   focus: '<path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><circle cx="12" cy="12" r="2.5"/>',
 };
 export function Icon({ name, size = 18, class: c = '' }) {

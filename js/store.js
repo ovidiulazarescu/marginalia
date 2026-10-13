@@ -5,7 +5,7 @@ import * as search from './search.js';
 import { sync, start as startSync, bootstrap as syncBootstrap, fetchFileBlob } from './sync.js';
 
 export const DEFAULT_SETTINGS = {
-  theme: 'system', pdfTheme: 'light', editorFont: 'sans', editorWidth: 'normal', penOnly: true, sidebar: true,
+  theme: 'system', pdfTheme: 'light', formatBar: true, editorFont: 'sans', editorWidth: 'normal', penOnly: true, sidebar: true,
   spellcheck: true, snapshotMinutes: 10, homeSections: { recent: true, pinned: true, edited: true, inbox: true, notebooks: true },
 };
 const newTab = (cur) => ({ id: uid('t'), cur, back: [], fwd: [] });

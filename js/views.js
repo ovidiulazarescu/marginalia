@@ -486,6 +486,8 @@ function Settings() {
         <label class="switch"><input type="checkbox" id="set-pen" checked=${st.penOnly} onChange=${(e) => setSettings({ penOnly: e.target.checked })} /><span></span></label></div>
     </section>
     <section class="set-sec"><h2>Writing</h2>
+      <div class="set-row"><div><b>Formatting toolbar</b><p>Shows text styles, lists, links and code blocks above every page. When off, a smaller toolbar appears over selected text instead.</p></div>
+        <label class="switch"><input type="checkbox" id="set-formatbar" checked=${st.formatBar} onChange=${(e) => setSettings({ formatBar: e.target.checked })} /><span></span></label></div>
       <div class="set-row"><div><b>Spellcheck</b></div><label class="switch"><input type="checkbox" id="set-spell" checked=${st.spellcheck} onChange=${(e) => setSettings({ spellcheck: e.target.checked })} /><span></span></label></div>
       <div class="set-row"><div><b>Automatic versions</b><p>How often Marginalia keeps a version while you edit a note.</p></div>
         <select class="select" id="set-snap" value=${st.snapshotMinutes} onChange=${(e) => setSettings({ snapshotMinutes: +e.target.value })}>${[2, 5, 10, 20, 30].map((m) => html`<option value=${m}>Every ${m} minutes</option>`)}</select></div>
