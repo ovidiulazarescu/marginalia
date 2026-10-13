@@ -212,7 +212,13 @@ button.chip:hover { color: var(--fg); background: var(--line); }
 .page-doc { position: relative; max-width: var(--col); margin: 0 auto; }
 
 /* formatting toolbar */
-.format-bar { position: sticky; top: 0; z-index: 15; display: flex; align-items: center; gap: 1px; max-width: calc(var(--col) + 24px); margin: -18px auto 10px; padding: 6px; background: var(--paper); border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+/* Page header row: notebook path, formatting toolbar, note actions. It stays under the tabs while the page scrolls. */
+.page-bar { gap: 4px; border-bottom: 1px solid var(--line); }
+.page-bar .note-actions { padding-left: 6px; margin-left: 2px; border-left: 1px solid var(--line); }
+.page-bar .crumbs { flex: 0 20 auto; max-width: 24%; min-width: 48px; }
+.page-bar .crumb { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.note-actions { display: flex; align-items: center; gap: 4px; flex: none; }
+.format-bar { display: flex; align-items: center; gap: 1px; flex: 0 1 auto; min-width: 0; margin: 0 auto; overflow-x: auto; scrollbar-width: none; }
 .format-bar::-webkit-scrollbar { display: none; }
 .tb-btn { display: grid; place-items: center; width: 30px; height: 32px; flex: none; border-radius: 7px; color: var(--fg-2); }
 .tb-btn:hover { background: var(--hover); color: var(--fg); }

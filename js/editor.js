@@ -97,7 +97,7 @@ function posAt(pre, index) {
 const textToParagraphs = (t) => t.replace(/\r\n?/g, '\n').replace(/\n+$/, '').split('\n')
   .map((l) => `<p>${escapeHtml(l).replace(/^[ \t]+/, (w) => w.replace(/\t/g, '    ').replace(/ /g, '&nbsp;')) || '<br>'}</p>`).join('');
 
-export function PageEditor({ note, pane }) {
+export function PageEditor({ note, pane, crumbs, actions }) {
   const ed = useRef();
   const titleRef = useRef();
   const scrollRef = useRef();
@@ -612,8 +612,9 @@ export function PageEditor({ note, pane }) {
   const LANG_NAMES = { yaml: 'YAML', json: 'JSON', bash: 'Shell', hcl: 'Terraform (HCL)', python: 'Python', javascript: 'JavaScript', typescript: 'TypeScript', sql: 'SQL', html: 'HTML', css: 'CSS', xml: 'XML', markdown: 'Markdown', go: 'Go', java: 'Java', c: 'C', dockerfile: 'Dockerfile', ini: 'INI', toml: 'TOML' };
 
   return html`
-    <div class="page-scroll scroll" ref=${scrollRef}>
-      ${S.settings.formatBar && html`<div class="format-bar" role="toolbar" aria-label="Formatting">
+    <header class="note-bar page-bar">
+      ${crumbs}
+    ${S.settings.formatBar ? html`<div class="format-bar" role="toolbar" aria-label="Formatting">
         ${tb('undo', `Undo (${MOD}Z)`, () => exec('undo'))}
         ${tb('redo', `Redo (${MOD}${SHIFT}Z)`, () => exec('redo'))}
         <span class="tb-sep"></span>
@@ -649,7 +650,10 @@ export function PageEditor({ note, pane }) {
           ])}><${Icon} name="plus" size=${17} /></button>
         <span class="tb-sep"></span>
         ${tb('x', 'Clear formatting', () => { exec('removeFormat'); changed(); })}
-      </div>`}
+      </div>` : html`<span class="spacer"></span>`}
+      ${actions}
+    </header>
+    <div class="page-scroll scroll" ref=${scrollRef}>
       <article class="page-doc">
         <textarea ref=${titleRef} class="page-title" rows="1" placeholder="Untitled" spellcheck=${S.settings.spellcheck}
           onInput=${(e) => { autosize(e.target); saveTitle(e.target.value); }} onKeyDown=${onTitleKey} aria-label="Title"></textarea>

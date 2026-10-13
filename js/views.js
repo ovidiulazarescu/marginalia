@@ -76,28 +76,30 @@ function NoteView({ note, pane }) {
   const [title, setTitle] = useState(note.title);
   useEffect(() => setTitle(note.title), [note.id, note.rev]);
   const saveTitle = useMemo(() => debounce((t) => updateNote(note.id, { title: t }), 250), [note.id]);
-  return html`<div class=${cls('note-view', 'type-' + note.type)}>
-    ${note.trashed && html`<div class="banner">This note is in the Trash.
-      <button class="btn small" onClick=${() => restoreNote(note.id)}>Restore</button>
-      <button class="btn small danger" onClick=${async () => { if (await confirmDialog('Delete forever?', 'This cannot be undone.', 'Delete forever', true)) destroyNote(note.id); }}>Delete forever</button></div>`}
-    <header class="note-bar">
-      ${note.type === 'page'
-        ? html`<div class="crumbs">${path.length ? path.map((b, i) => html`${i > 0 && html`<span class="crumb-sep">/</span>`}<button class="crumb" onClick=${() => open('nb:' + b.id)}>${b.name}</button>`) : html`<button class="crumb" onClick=${() => open('inbox')}>Inbox</button>`}</div>`
-        : html`<div class="bar-title">
-            <${Icon} name=${typeIcon(note.type)} size=${17} />
-            <input class="note-title-input" id=${'title-' + note.id} value=${title} placeholder=${note.type === 'pdf' ? 'Untitled PDF' : 'Untitled canvas'} aria-label="Title"
-              onInput=${(e) => { setTitle(e.target.value); saveTitle(e.target.value); }} onKeyDown=${(e) => { if (e.key === 'Enter' || e.key === 'Escape') e.target.blur(); }} onBlur=${() => saveTitle.flush()} />
-            <${NoteMeta} note=${note} compact />
-          </div>`}
-      <span class="spacer"></span>
+  const crumbs = html`<div class="crumbs">${path.length ? path.map((b, i) => html`${i > 0 && html`<span class="crumb-sep">/</span>`}<button class="crumb" onClick=${() => open('nb:' + b.id)}>${b.name}</button>`) : html`<button class="crumb" onClick=${() => open('inbox')}>Inbox</button>`}</div>`;
+  const actions = html`<div class="note-actions">
       <button class=${cls('icon-btn', note.pinned && 'on')} title=${note.pinned ? 'Unpin' : 'Pin'} aria-label=${note.pinned ? 'Unpin' : 'Pin'} aria-pressed=${!!note.pinned} onClick=${() => togglePin(note.id)}><${Icon} name="pin" size=${17} /></button>
       <button class=${cls('btn ghost small links-btn', inspector && S.ws.inspectorTab === 'links' && 'on')} title=${`Backlinks and related notes (${MOD}${SHIFT}I)`} onClick=${() => setWs({ inspector: !(inspector && S.ws.inspectorTab === 'links'), inspectorTab: 'links' })}><${Icon} name="link" size=${16} />${bl}</button>
       <button class=${cls('icon-btn', inspector && S.ws.inspectorTab === 'history' && 'on')} title="Version history" aria-label="Version history" onClick=${() => setWs({ inspector: !(inspector && S.ws.inspectorTab === 'history'), inspectorTab: 'history' })}><${Icon} name="history" size=${17} /></button>
       <button class="icon-btn" title="More" aria-label="More actions" onClick=${(e) => openMenu(e, noteMenu(note), { align: 'right' })}><${Icon} name="more" size=${17} /></button>
-    </header>
+  </div>`;
+  return html`<div class=${cls('note-view', 'type-' + note.type)}>
+    ${note.trashed && html`<div class="banner">This note is in the Trash.
+      <button class="btn small" onClick=${() => restoreNote(note.id)}>Restore</button>
+      <button class="btn small danger" onClick=${async () => { if (await confirmDialog('Delete forever?', 'This cannot be undone.', 'Delete forever', true)) destroyNote(note.id); }}>Delete forever</button></div>`}
+    ${note.type !== 'page' && html`<header class="note-bar">
+      <div class="bar-title">
+        <${Icon} name=${typeIcon(note.type)} size=${17} />
+        <input class="note-title-input" id=${'title-' + note.id} value=${title} placeholder=${note.type === 'pdf' ? 'Untitled PDF' : 'Untitled canvas'} aria-label="Title"
+          onInput=${(e) => { setTitle(e.target.value); saveTitle(e.target.value); }} onKeyDown=${(e) => { if (e.key === 'Enter' || e.key === 'Escape') e.target.blur(); }} onBlur=${() => saveTitle.flush()} />
+        <${NoteMeta} note=${note} compact />
+      </div>
+      <span class="spacer"></span>
+      ${actions}
+    </header>`}
     <div class="note-main">
       <div class="note-content">
-        ${note.type === 'page' && html`<${PageEditor} note=${note} pane=${pane} />`}
+        ${note.type === 'page' && html`<${PageEditor} note=${note} pane=${pane} crumbs=${crumbs} actions=${actions} />`}
         ${note.type === 'canvas' && html`<${CanvasView} note=${note} />`}
         ${note.type === 'pdf' && html`<${PdfView} note=${note} />`}
       </div>
