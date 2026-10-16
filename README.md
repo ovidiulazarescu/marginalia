@@ -1,46 +1,95 @@
 # Marginalia
 
-A local-first notebook for studying from online courses, articles and PDFs. It has no accounts, no tracking and no AI features.
+A local-first notebook for studying from online courses, lectures, articles and PDFs. Write pages, map ideas on an infinite canvas, and highlight and draw on your PDFs, all linked together and searchable in one place.
 
-## Run it
+No accounts, no tracking, no AI. Your notes live in your browser and, if you want, on your own server.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshot-dark.png">
+  <img alt="Marginalia's home view: recent notes, a quick-capture box, notebooks and tags in the sidebar" src="docs/screenshot-light.png">
+</picture>
+
+## Features
+
+- **Pages** with a formatting toolbar, Markdown shortcuts, a `/` block menu, checklists, tables, callouts, images you can resize, and sketch blocks you draw in with a pen or stylus.
+- **Code blocks** that keep indentation when you paste YAML, JSON, Terraform, shell scripts or other code, with a language label, copy button and auto-indent.
+- **Infinite canvas** with cards, stickies, note cards, frames, arrows, and pen and highlighter ink.
+- **PDF reader and annotator**: highlights and underlines with comments, pen, highlighter, text boxes, eraser, outline, find, and quote-to-notes. Dark pages invert the text but keep figures and photos in their original colours.
+- **Organisation**: nested notebooks (class, chapter, topic), tags, pinned notes, an Inbox and a Trash.
+- **Links between notes**: `[[wiki links]]`, backlinks and an outline panel.
+- **Fast navigation**: tabs, split view, back and forward, a quick switcher with universal search across notes and PDF text (`⌘K`), and a command palette (`⌘⇧P`).
+- **Quick capture** (`⌘⇧Space`) sends a thought straight to your Inbox.
+- **Version history**: automatic snapshots and named versions (`⌘S`), with a diff view and restore.
+- **Export and import**: Markdown, HTML, Word, plain text, PNG, SVG, PDF with your annotations burned in, and a full ZIP backup. Import Markdown, text, HTML, PDFs, whole folders and backups.
+- **Offline-first sync**: each browser keeps a full copy, and an optional small server keeps your devices in sync.
+- Light and dark themes, built for keyboard and stylus. Press `⌘/` (`Ctrl /` on Windows and Linux) in the app for every shortcut.
+
+## Quick start
+
+You need Python 3 and nothing else.
+
+```bash
+git clone https://github.com/ovidiulazarescu/marginalia.git
 ```
-python3 serve.py
+
+```bash
+cd marginalia && python3 serve.py
 ```
 
-This opens http://localhost:5178. It needs only Python 3 and has no other dependencies.
+This opens http://localhost:5178 with a few sample notes to explore. Use `--port` to change the port and `--data` to choose where notes are stored.
 
-`serve.py` serves the app and also stores your notes: notebooks, notes, versions and PDF text go into SQLite at `data/marginalia.db`, and PDFs into `data/files/`. Use `--data` to choose another folder and `--port` to change the port.
+There's no build step: the app is plain ES modules. Its libraries (Preact, pdf.js, pdf-lib, perfect-freehand, MiniSearch, jsdiff and JSZip) load from jsDelivr at pinned versions, and fonts load from Google Fonts, so the first load needs an internet connection.
 
-Each browser keeps a full copy of your notes in IndexedDB, so the app is fast and works offline. It syncs with the server in the background every 30 seconds, shortly after each edit, and when you come back online. If two devices change the same note, the newest edit wins and the other one is kept in that note's version history, labelled "From another device". The status of the sync is shown at the bottom of the sidebar and in **Settings → Sync**.
+## How your notes are stored
 
-Each server database has a permanent ID. If the server is reset or its data folder is replaced, every browser that connects notices the new ID and uploads the notes and PDFs it holds, so the server is rebuilt from your devices. A device's copy can be older than the server's was, so notes you deleted forever after that device last synced may come back; delete them again.
+**In the browser.** Every browser keeps a full copy of your notes in IndexedDB, so the app is fast and keeps working offline.
 
-When the app is served by a plain static web server instead, there is no sync: notes stay in that browser. **Settings → Download full backup** works either way.
+**On the server.** `serve.py` serves the app and stores a copy of your notes: notebooks, notes, versions and PDF text go into SQLite at `data/marginalia.db`, and PDFs into `data/files/`. It uses only the Python standard library.
 
-No build step: the app is plain ES modules. Preact, pdf.js, pdf-lib, perfect-freehand, MiniSearch, jsdiff and JSZip load from jsDelivr at pinned versions (see `js/lib.js`), so the first load needs an internet connection.
+**Sync.** Browsers sync with the server in the background: every 30 seconds, shortly after each edit, and when you come back online. The status shows at the bottom of the sidebar and in **Settings → Sync**.
 
-## Self-host on TrueNAS with an optional Cloudflare tunnel
+- **Conflicts.** If two devices change the same note, the newest edit wins and the other is kept in that note's version history, labelled "From another device".
+- **Server resets.** Each server database has a permanent ID. If the server is reset or its data folder replaced, every browser that connects notices the new ID and uploads what it holds, so the server is rebuilt from your devices. A device's copy can be older than the server's was, so notes you deleted forever after that device last synced may come back; delete them again.
+- **Without the server.** If you serve the files with any static web server instead, there's no sync and notes stay in that browser.
 
-These steps run `serve.py` in a Python container on TrueNAS SCALE 24.10+ (Docker apps). Steps 1–3 make it available on your local network. Steps 4–5 are optional and make it reachable from anywhere through a Cloudflare Zero Trust tunnel.
+**Backups.** **Settings → Download full backup** works either way.
+
+## Self-hosting
+
+### Docker Compose
+
+From the repo root:
+
+```bash
+docker compose -f deploy/docker-compose.yml up -d
+```
+
+[`deploy/docker-compose.yml`](deploy/docker-compose.yml) runs `serve.py` in the official `python:3.12-alpine` image on port 8095. It mounts the checkout read-only and keeps notes in `deploy/data/`.
+
+### Security
+
+The server has no user accounts. Anyone who can reach its port can read and change your notes, so either keep it on your local network or put a login in front of it.
+
+- **Sync token.** Set `MARGINALIA_TOKEN` (or `--token`) to a long random value, for example the output of `openssl rand -hex 24`. Every API request must then carry it, and you enter it once per browser under **Settings → Sync**.
+- **Access login.** When you expose the server to the internet, put an authenticating proxy in front of it, such as Cloudflare Access (see below). The app notices when that login expires and shows **Sign-in expired** in the sidebar; a reload signs you back in.
+
+### TrueNAS SCALE, with an optional Cloudflare tunnel
+
+These steps run the server as a Docker app on TrueNAS SCALE 24.10 or later. Steps 1–3 make it available on your local network. Steps 4–5 are optional and make it reachable from anywhere through a Cloudflare Zero Trust tunnel.
 
 1. **Create two datasets**, for example:
    - `/mnt/tank/apps/marginalia/app` for the code
-   - `/mnt/tank/apps/marginalia/data` for your notes. Keeping it separate means TrueNAS snapshots and replication can protect your notes on their own.
+   - `/mnt/tank/apps/marginalia/data` for your notes. A separate dataset lets snapshots and replication protect your notes on their own.
 
-2. **Put the code in the app dataset.** Clone the repo directly into it, so updating later is a `git pull`:
+   A `data/` folder inside the checkout also works, because git ignores it.
 
-   ```
-   git clone git@github.com:ovidiulazarescu/marginalia.git /mnt/tank/apps/marginalia/app
-   ```
+2. **Clone the repo into the app dataset**, so updating later is a `git pull`. The folder must be empty or not exist yet:
 
-   The repo is private, so add a read-only deploy key to it first. The folder must be empty or not exist yet. Copying with `rsync` also works:
-
-   ```
-   rsync -av --exclude .git --exclude .claude --exclude data ./ root@TRUENAS_IP:/mnt/tank/apps/marginalia/app/
+   ```bash
+   git clone https://github.com/ovidiulazarescu/marginalia.git /mnt/tank/apps/marginalia/app
    ```
 
-3. **Create the app.** In TrueNAS go to **Apps → Discover Apps → ⋮ → Install via YAML** and paste:
+3. **Create the app.** Go to **Apps → Discover Apps → ⋮ → Install via YAML** and paste:
 
    ```yaml
    services:
@@ -58,46 +107,46 @@ These steps run `serve.py` in a Python container on TrueNAS SCALE 24.10+ (Docker
          - /mnt/tank/apps/marginalia/data:/data
    ```
 
-   Change `tank` to your pool name and `8095` to a free port, then check `http://TRUENAS_IP:8095`. The app's logs should say `Marginalia is running` and show the data folder.
+   Change `tank` to your pool name and `8095` to a free port, then open `http://TRUENAS_IP:8095`. The app's logs should say `Marginalia is running` and show `Data folder: /data`. Set `MARGINALIA_TOKEN` as described under [Security](#security).
 
-   The app has no login of its own, so anyone who can reach that port can read and change your notes. To require a password-like token, set `MARGINALIA_TOKEN` to a long random value (for example the output of `openssl rand -hex 24`), then enter the same token once in each browser under **Settings → Sync**.
+4. **Optional: route a subdomain.** In Cloudflare Zero Trust go to **Networks → Tunnels**, choose your tunnel, then **Public Hostname → Add**. Set a subdomain (for example `notes`) and your domain, with service `HTTP` and URL `TRUENAS_IP:8095`. If `cloudflared` isn't running yet, install the **Cloudflared** app from the TrueNAS catalog with your tunnel token.
 
-4. **Optional: route a subdomain.** In Cloudflare Zero Trust go to **Networks → Tunnels**, choose your tunnel, then **Public Hostname → Add**. Set the subdomain (for example `notes`) and domain, with service `HTTP` and URL `TRUENAS_IP:8095`. If `cloudflared` isn't running yet, install the **Cloudflared** app from the TrueNAS catalog with your tunnel token.
+5. **Restrict access (required if you did step 4).** The tunnel makes the server public. Go to **Zero Trust → Access → Applications → Add → Self-hosted**, enter the hostname, and add an **Allow** policy that includes only your email address, with One-time PIN as the login method. Sync requests go to the same address, so this login protects them too. It doesn't cover direct access on your LAN at `TRUENAS_IP:8095`; the token from step 3 does.
 
-5. **Restrict access (needed if you did step 4).** The tunnel makes the server public, so don't leave it open. Go to **Zero Trust → Access → Applications → Add → Self-hosted**, enter the hostname, and add an **Allow** policy that includes only your email address, with One-time PIN as the login method. The app's sync requests go to the same address, so this login protects them too. When the session expires, the sidebar says **Sign-in expired** and a reload signs you back in. This login doesn't cover direct access on your LAN at `TRUENAS_IP:8095`; the token from step 3 does.
+**Updating.** Run `git pull` in the app dataset, then restart the app so the server picks up any changes to `serve.py`. Browsers load the new app files on their next reload.
 
-**First sync.** The first browser to connect uploads the notes it already has. A new device starts from the server's copy, so it doesn't get its own set of sample notes. Notes in a browser that used an older address (such as `localhost`) aren't on the server. Move them with **Settings → Download full backup** there and **Restore from backup** on the synced address, and they upload on the next sync.
+**Cloudflare caching.** Cloudflare's default browser cache setting overrides the server's, so browsers may keep old app files for up to 4 hours after an update. Add a rule under **Caching → Cache Rules**: hostname equals your subdomain, cache eligibility **Bypass cache**, browser TTL **Respect origin**. Until then, `⌘⇧R` (`Ctrl Shift R`) forces a fresh load.
 
-**Updating.** Run `git pull` (or rerun `rsync`) in the app dataset, then restart the app in TrueNAS so the server picks up any changes to `serve.py`. Browsers load the new app files on their next reload.
+**Backups.** Snapshot the data dataset. `marginalia.db` uses SQLite's WAL mode, and a snapshot captures it together with its `-wal` file as a consistent copy.
 
-Behind Cloudflare, browsers may keep the old files for up to 4 hours, because Cloudflare's default browser cache setting overrides the server's. Add a cache rule under **Caching → Cache Rules**: hostname equals your subdomain, cache eligibility **Bypass cache**, browser TTL **Respect origin**. Until then, `⌘⇧R` (or `Ctrl Shift R`) forces a fresh load.
+### First sync on a new address
 
-**Backups.** Snapshot the data dataset. `marginalia.db` uses SQLite's WAL mode, so a snapshot of the dataset captures a consistent copy along with its `-wal` file.
+The first browser to connect to an empty server uploads the notes it already has. A new device starts from the server's copy instead, so it doesn't add its own sample notes.
 
-### Other Docker hosts
+Notes in a browser that used a different address (such as `localhost`) aren't on the server. To move them:
+1. On the old address, use **Settings → Download full backup**.
+2. On the synced address, use **Restore from backup**.
 
-On any machine with Docker Compose, run this from the repo root:
+They upload on the next sync.
 
-```
-docker compose -f deploy/docker-compose.yml up -d
-```
+## Project layout
 
-[`deploy/docker-compose.yml`](deploy/docker-compose.yml) is the same service using relative paths: it serves the checkout on port 8095 and keeps notes in `deploy/data/`.
-
-## What's in it
-
-| Area | Where |
+| Area | Files |
 | --- | --- |
-| Page editor: formatting toolbar, Markdown shortcuts, `/` blocks, `[[links]]` and web links, checklists, tables, callouts, sketch blocks | `js/editor.js`, `js/ink.js` |
-| Code blocks: pasted YAML, JSON, Terraform, shell and other code keeps its indentation, with a language label, copy button and auto-indent | `js/editor.js`, `js/md.js` |
-| Infinite canvas: cards, stickies, note cards, frames, arrows, pen and highlighter ink | `js/canvas.js` |
-| PDF reader and annotator: highlights and underlines with comments, pen, highlighter, text boxes, eraser, outline, find, quote-to-notes, dark pages that keep images in colour | `js/pdfview.js`, `js/pdfdark.js` |
-| Universal search, quick switcher and command palette (`⌘K`, `⌘⇧P`) | `js/search.js`, `js/palette.js` |
-| Quick capture (`⌘⇧Space`) | `js/capture.js` |
-| Notebooks (nested), tags, pinned notes, Inbox, Trash | `js/store.js`, `js/sidebar.js` |
-| Local storage and change tracking, sync with the server | `js/db.js`, `js/sync.js` |
+| App shell, state, navigation, notebooks, tags | `js/app.js`, `js/store.js`, `js/sidebar.js`, `js/actions.js` |
+| Page editor and sketch blocks | `js/editor.js`, `js/ink.js` |
+| Markdown conversion, sanitising, code detection, links | `js/md.js` |
+| Infinite canvas | `js/canvas.js` |
+| PDF reader, annotations, dark pages | `js/pdfview.js`, `js/pdfdark.js` |
+| Search, quick switcher, command palette, quick capture | `js/search.js`, `js/palette.js`, `js/capture.js` |
+| Home, list views, backlinks, outline, history, settings | `js/views.js` |
+| Export and import | `js/export.js` |
+| Local storage, change tracking, sync | `js/db.js`, `js/sync.js` |
 | Server: app files plus sync API on SQLite (`/api/health`, `/api/push`, `/api/changes`, `/api/files/<id>`) | `serve.py` |
-| Home, list views, backlinks, outline, version history, settings | `js/views.js` |
-| Export (Markdown, HTML, Word, PNG, SVG, annotated PDF, ZIP) and import (Markdown, text, HTML, PDF, folders, backups) | `js/export.js`, `js/md.js` |
+| Library versions | `js/lib.js` |
 
-Press `⌘/` (or `Ctrl /`) in the app to see every keyboard shortcut.
+`artifact.html` is a minimal entry page for running the app inside a hosted HTML viewer, where notes stay in that browser.
+
+## License
+
+[MIT](LICENSE)
