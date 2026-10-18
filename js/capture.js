@@ -1,6 +1,6 @@
 // Quick capture: jot something down from anywhere, into the Inbox or onto the end of an existing note.
 import { html, useState, useEffect, useRef } from './lib.js';
-import { S, emit, createNote, updateNote, toast, recentNotes, currentId, pickNote, flushAll, open } from './store.js';
+import { S, emit, createNote, updateNote, toast, recentNotes, currentId, pickNote, flushAll, open, nbStyle } from './store.js';
 import { pickNotebook } from './dialogs.js';
 import { Icon, typeIcon } from './icons.js';
 import { cls, escapeHtml, mod, MOD, SHIFT } from './util.js';
@@ -63,7 +63,7 @@ function CaptureInner({ c }) {
         placeholder=${mode === 'new' ? 'The first line becomes the title. Add #tags anywhere.' : 'This is added to the end of the note, with a timestamp.'}></textarea>
       <div class="cap-row">
         ${mode === 'new'
-          ? html`<button class="chip" onClick=${async () => { const r = await pickNotebook('Save to', nb); if (r !== undefined) setNb(r); }}><${Icon} name=${nb ? 'book' : 'inbox'} size=${14} />${nb ? S.notebooks.get(nb)?.name : 'Inbox'}<${Icon} name="chevronDown" size=${13} /></button>`
+          ? html`<button class="chip" style=${nbStyle(nb)} onClick=${async () => { const r = await pickNotebook('Save to', nb); if (r !== undefined) setNb(r); }}><${Icon} name=${nb ? 'book' : 'inbox'} size=${14} class="nb-ic" />${nb ? S.notebooks.get(nb)?.name : 'Inbox'}<${Icon} name="chevronDown" size=${13} /></button>`
           : html`<button class="chip" onClick=${async () => { const n = await pickNote({ title: 'Add to which note?' }); if (n) setTarget(n); S.ui.capture = c; emit(); }}><${Icon} name=${target ? typeIcon(target.type) : 'page'} size=${14} />${target ? target.title || 'Untitled' : 'Choose a note'}<${Icon} name="chevronDown" size=${13} /></button>`}
         ${tags.map((t) => html`<span class="chip tag static">#${t}</span>`)}
         <span class="spacer"></span>

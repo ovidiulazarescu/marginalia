@@ -320,7 +320,8 @@ export function updateNotebook(id, patch) {
   if ('parentId' in patch && (patch.parentId === id || descendants(id).includes(patch.parentId))) return;
   Object.assign(nb, patch);
   db.put('notebooks', nb);
-  for (const n of S.notes.values()) if (n.notebookId && descendants(id).concat(id).includes(n.notebookId)) scheduleIndex(n);
+  // Search indexes the notebook path, so only a rename or move needs reindexing.
+  if ('name' in patch || 'parentId' in patch) for (const n of S.notes.values()) if (n.notebookId && descendants(id).concat(id).includes(n.notebookId)) scheduleIndex(n);
   emit();
 }
 export function deleteNotebook(id) {
@@ -347,6 +348,17 @@ export function notebookPath(id) {
   return out;
 }
 export const nbPathString = (id) => notebookPath(id).map((b) => b.name).join(' / ');
+// Notebook colours. The keys are stored on notebooks; the shades for each theme live in styles.css as --nb-<key>.
+export const NB_COLORS = [['red', 'Red'], ['orange', 'Orange'], ['yellow', 'Yellow'], ['green', 'Green'], ['teal', 'Teal'], ['blue', 'Blue'], ['purple', 'Purple'], ['pink', 'Pink'], ['gray', 'Grey']];
+// A notebook without its own colour takes its nearest coloured parent's, so a class's sections share its colour.
+const NB_KEYS = new Set(NB_COLORS.map(([k]) => k));
+export function nbColor(id) {
+  const path = notebookPath(id);
+  for (let i = path.length - 1; i >= 0; i--) if (NB_KEYS.has(path[i].color)) return path[i].color;
+  return null;
+}
+// Sets --nbc for the elements that show a notebook's colour (icons with .nb-ic, .nb-dot, coloured cards).
+export const nbStyle = (id) => { const c = nbColor(id); return c ? `--nbc:var(--nb-${c})` : ''; };
 export const notesIn = (id) => [...S.notes.values()].filter((n) => !n.trashed && (n.notebookId || null) === (id || null));
 export const countDeep = (id) => { const ids = new Set([id, ...descendants(id)]); let c = 0; for (const n of S.notes.values()) if (!n.trashed && ids.has(n.notebookId)) c++; return c; };
 export const liveNotes = () => [...S.notes.values()].filter((n) => !n.trashed);

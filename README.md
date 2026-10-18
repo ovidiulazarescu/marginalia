@@ -15,7 +15,7 @@ No accounts, no tracking, no AI. Your notes live in your browser and, if you wan
 - **Code blocks** that keep indentation when you paste YAML, JSON, Terraform, shell scripts or other code, with a language label, copy button and auto-indent.
 - **Infinite canvas** with cards, stickies, note cards, frames, arrows, and pen and highlighter ink.
 - **PDF reader and annotator**: highlights and underlines with comments, pen, highlighter, text boxes, eraser, outline, find, and quote-to-notes. Dark pages invert the text but keep figures and photos in their original colours.
-- **Organisation**: nested notebooks (class, chapter, topic), tags, pinned notes, an Inbox and a Trash.
+- **Organisation**: nested notebooks (class, chapter, topic) with colours that their sections share, tags, pinned notes, an Inbox and a Trash.
 - **Links between notes**: `[[wiki links]]`, backlinks and an outline panel.
 - **Fast navigation**: tabs, split view, back and forward, a quick switcher with universal search across notes and PDF text (`⌘K`), and a command palette (`⌘⇧P`).
 - **Quick capture** (`⌘⇧Space`) sends a thought straight to your Inbox.

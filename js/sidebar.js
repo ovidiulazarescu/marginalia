@@ -1,5 +1,5 @@
 import { html, useState } from './lib.js';
-import { S, emit, open, setWs, setSettings, childNotebooks, notesIn, countDeep, allTags, liveNotes, currentId, openPalette, openCapture, moveNote, updateNotebook, importPdf } from './store.js';
+import { S, emit, open, setWs, setSettings, childNotebooks, notesIn, countDeep, allTags, liveNotes, currentId, openPalette, openCapture, moveNote, updateNotebook, importPdf, nbStyle } from './store.js';
 import { Icon, typeIcon } from './icons.js';
 import { openMenu } from './dialogs.js';
 import { newPage, newCanvas, importPdfs, newNotebook, noteMenu, notebookMenu, importAny } from './actions.js';
@@ -38,13 +38,14 @@ function dropHandlers(target, setOver) {
   };
 }
 
-function NoteRow({ n, depth = 0, cur }) {
-  return html`<a href=${'#' + n.id} draggable="true" class=${cls('sb-row note-row', cur === n.id && 'active')} style=${`--d:${depth}`}
+// tint: colour the icon with the note's notebook colour (used for pinned notes, which sit outside their notebook).
+function NoteRow({ n, depth = 0, cur, tint }) {
+  return html`<a href=${'#' + n.id} draggable="true" class=${cls('sb-row note-row', cur === n.id && 'active')} style=${`--d:${depth};${tint ? nbStyle(n.notebookId) : ''}`}
     onDragStart=${(e) => dragNote(e, n.id)}
     onClick=${(e) => { e.preventDefault(); open(n.id, { split: mod(e), newTab: e.altKey }); }}
     onAuxClick=${(e) => { if (e.button === 1) { e.preventDefault(); open(n.id, { newTab: true }); } }}
     onContextMenu=${(e) => openMenu(e, noteMenu(n, { inList: true }), { at: 'pointer' })}>
-    <${Icon} name=${typeIcon(n.type)} size=${15} /><span class="sb-label">${n.title || 'Untitled'}</span>
+    <${Icon} name=${typeIcon(n.type)} size=${15} class=${tint ? 'nb-ic' : ''} /><span class="sb-label">${n.title || 'Untitled'}</span>
   </a>`;
 }
 
@@ -55,13 +56,13 @@ function NbNode({ nb, depth, cur }) {
   const notes = exp ? notesIn(nb.id).sort((a, b) => natCompare(a.title, b.title)) : [];
   const toggle = (e) => { e?.stopPropagation(); e?.preventDefault(); S.ws.expanded[nb.id] = !exp; setWs({}); };
   return html`<div class="sb-node">
-    <a href=${'#nb:' + nb.id} draggable="true" class=${cls('sb-row nb-row', cur === 'nb:' + nb.id && 'active', over && 'drop')} style=${`--d:${depth}`}
+    <a href=${'#nb:' + nb.id} draggable="true" class=${cls('sb-row nb-row', cur === 'nb:' + nb.id && 'active', over && 'drop')} style=${`--d:${depth};${nbStyle(nb.id)}`}
       onDragStart=${(e) => { e.dataTransfer.setData('application/x-nb-id', nb.id); e.dataTransfer.effectAllowed = 'move'; }}
       ...${dropHandlers(nb.id, setOver)}
       onClick=${(e) => { e.preventDefault(); open('nb:' + nb.id, { split: mod(e) }); if (!exp) toggle(); }}
       onContextMenu=${(e) => openMenu(e, notebookMenu(nb), { at: 'pointer' })}>
       <button class=${cls('chev', exp && 'open')} onClick=${toggle} aria-label=${exp ? 'Collapse' : 'Expand'} tabIndex="-1"><${Icon} name="chevron" size=${13} /></button>
-      <${Icon} name="book" size=${15} /><span class="sb-label">${nb.name}</span><span class="sb-count">${countDeep(nb.id) || ''}</span>
+      <${Icon} name="book" size=${15} class="nb-ic" /><span class="sb-label">${nb.name}</span><span class="sb-count">${countDeep(nb.id) || ''}</span>
     </a>
     ${exp && html`<div class="sb-children">
       ${kids.map((k) => html`<${NbNode} key=${k.id} nb=${k} depth=${depth + 1} cur=${cur} />`)}
@@ -115,7 +116,7 @@ export function Sidebar() {
       </div>
       ${pinned.length > 0 && html`<div class="sb-group">
         <button class="sb-head" onClick=${() => setWs({ pinnedOpen: !S.ws.pinnedOpen })}><${Icon} name=${S.ws.pinnedOpen ? 'chevronDown' : 'chevron'} size=${12} />Pinned</button>
-        ${S.ws.pinnedOpen && pinned.map((n) => html`<${NoteRow} key=${n.id} n=${n} cur=${cur} />`)}
+        ${S.ws.pinnedOpen && pinned.map((n) => html`<${NoteRow} key=${n.id} n=${n} cur=${cur} tint />`)}
       </div>`}
       <div class="sb-group">
         <div class=${cls('sb-head-row', overRoot && 'drop')} ...${dropHandlers(null, setOverRoot)}>

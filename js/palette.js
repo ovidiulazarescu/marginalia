@@ -1,6 +1,6 @@
 // Universal search, quick switcher, command palette and note picker in one surface.
 import { html, useState, useEffect, useRef, useMemo } from './lib.js';
-import { S, emit, open, closePalette, search, nbPathString, recentNotes, currentId, liveNotes, allTags, createNote, findByTitle, toggleSplit, setSettings, setWs, openCapture, closeTab, newTabCmd, previousNote, childNotebooks, notebookPath } from './store.js';
+import { S, emit, open, closePalette, search, nbPathString, recentNotes, currentId, liveNotes, allTags, createNote, findByTitle, toggleSplit, setSettings, setWs, openCapture, closeTab, newTabCmd, previousNote, childNotebooks, notebookPath, nbStyle } from './store.js';
 import { Icon, typeIcon } from './icons.js';
 import { newPage, newCanvas, importPdfs, newNotebook, saveVersion, togglePin, showHistory, moveNoteDialog, importAny, contextNotebook } from './actions.js';
 import { exportNote, EXPORTS, backupAll } from './export.js';
@@ -138,10 +138,10 @@ function PaletteInner({ p }) {
                 <span class="pi-title" dangerouslySetInnerHTML=${{ __html: highlightTerms(n.title || 'Untitled', it.terms || []) }}></span>
                 ${it.snippet && html`<span class="pi-snip" dangerouslySetInnerHTML=${{ __html: (it.page && !it.titleHit ? `<b>p. ${it.page}${it.pageCount > 1 ? ` +${it.pageCount - 1}` : ''}</b> ` : '') + highlightTerms(it.snippet, it.terms || []) }}></span>`}
               </span>
-              <span class="pi-meta">${nbPathString(n.notebookId) || 'Inbox'}<span>${fmtRelative(n.opened || n.updated)}</span></span>
+              <span class="pi-meta"><span class="pi-nb" style=${nbStyle(n.notebookId)}>${nbStyle(n.notebookId) && html`<span class="nb-dot"></span>`}<span class="pi-nb-t" title=${nbPathString(n.notebookId)}><bdi dir="ltr">${nbPathString(n.notebookId) || 'Inbox'}</bdi></span></span><span>${fmtRelative(n.opened || n.updated)}</span></span>
             </div>`;
           }
-          if (it.kind === 'nb') return html`${section('Notebooks')}<div ...${props}><${Icon} name="book" size=${17} /><span class="pi-title">${notebookPath(it.b.id).map((b) => b.name).join(' / ')}</span></div>`;
+          if (it.kind === 'nb') return html`${section('Notebooks')}<div ...${props} style=${nbStyle(it.b.id)}><${Icon} name="book" size=${17} class="nb-ic" /><span class="pi-title">${notebookPath(it.b.id).map((b) => b.name).join(' / ')}</span></div>`;
           if (it.kind === 'tag') return html`${section('Tags')}<div ...${props}><${Icon} name="hash" size=${17} /><span class="pi-title">#${it.tag}</span><span class="pi-meta">${it.c} notes</span></div>`;
           if (it.kind === 'create') return html`${section('Create')}<div ...${props}><${Icon} name="plus" size=${17} /><span class="pi-title">${pick ? 'Create and link' : 'New page'} “${it.title}”</span></div>`;
         })}

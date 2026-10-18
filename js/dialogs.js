@@ -1,5 +1,5 @@
 import { html, useState, useEffect, useRef } from './lib.js';
-import { S, emit, ask, childNotebooks, createNotebook, notebookPath } from './store.js';
+import { S, emit, ask, childNotebooks, createNotebook, notebookPath, nbStyle } from './store.js';
 import { Icon } from './icons.js';
 import { cls, fuzzyScore, MOD, ALT, SHIFT, isMac } from './util.js';
 
@@ -29,7 +29,12 @@ export function Menu() {
   }, [m]);
   if (!m) return null;
   return html`<div class="menu popover" ref=${ref} role="menu" style=${pos ? `left:${pos.x}px;top:${pos.y}px` : `left:-999px;top:0`}>
-    ${m.items.map((it) => it === '-' ? html`<div class="menu-sep"></div>` : it.header ? html`<div class="menu-head">${it.header}</div>` : html`
+    ${m.items.map((it) => it === '-' ? html`<div class="menu-sep"></div>` : it.header ? html`<div class="menu-head">${it.header}</div>` : it.swatches ? html`
+      <div class="menu-nb-colors" role="group" aria-label=${it.label}>
+        ${it.swatches.map(([key, name]) => html`<button role="menuitemradio" aria-checked=${it.value === key} title=${name} aria-label=${name}
+          class=${cls('nb-swatch', !key && 'none', !key && it.inherit && 'inherit', it.value === key && 'on')} style=${key || it.inherit ? `--nbc:var(--nb-${key || it.inherit})` : ''}
+          onClick=${() => { S.ui.menu = null; emit(); it.pick(key); }}></button>`)}
+      </div>` : html`
       <button role="menuitem" class=${cls('menu-item', it.danger && 'danger', it.checked && 'checked')} disabled=${it.disabled}
         onClick=${() => { S.ui.menu = null; emit(); it.run?.(); }}>
         ${it.icon ? html`<${Icon} name=${it.icon} size=${16} />` : html`<span class="icon-space"></span>`}
@@ -113,8 +118,8 @@ function NotebookPicker({ d, close }) {
   return html`<h2 class="dialog-title">${d.title}</h2>
     <input id="nb-filter" ref=${ref} class="input" placeholder="Filter or create a notebook" value=${q} onInput=${(e) => { setQ(e.target.value); setIdx(0); }} onKeyDown=${onKey} />
     <div class="picker-list">
-      ${rows.map((r, i) => html`<button class=${cls('picker-row', i === idx && 'on', (r.inbox ? d.current == null : d.current === r.b.id) && 'current')} style=${q ? '' : `padding-left:${12 + r.depth * 18}px`} onClick=${() => choose(r)} onMouseEnter=${() => setIdx(i)}>
-        <${Icon} name=${r.inbox ? 'inbox' : 'book'} size=${16} /><span>${q || r.inbox ? r.path : r.b.name}</span></button>`)}
+      ${rows.map((r, i) => html`<button class=${cls('picker-row', i === idx && 'on', (r.inbox ? d.current == null : d.current === r.b.id) && 'current')} style=${(q ? '' : `padding-left:${12 + r.depth * 18}px;`) + (r.inbox ? '' : nbStyle(r.b.id))} onClick=${() => choose(r)} onMouseEnter=${() => setIdx(i)}>
+        <${Icon} name=${r.inbox ? 'inbox' : 'book'} size=${16} class="nb-ic" /><span>${q || r.inbox ? r.path : r.b.name}</span></button>`)}
       ${canCreate && html`<button class=${cls('picker-row', idx === rows.length && 'on')} onClick=${create}><${Icon} name="plus" size=${16} /><span>Create notebook “${q.trim()}”</span></button>`}
     </div>`;
 }

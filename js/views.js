@@ -2,7 +2,7 @@ import { html, useState, useEffect, useRef, useMemo, diffWords } from './lib.js'
 import {
   S, emit, open, back, forward, selectTab, closeTab, moveTab, toggleSplit, newTabCmd, setWs, setSettings, updateNote, restoreNote, destroyNote, emptyTrash,
   notebookPath, childNotebooks, notesIn, countDeep, liveNotes, backlinks, unlinkedMentions, listVersions, restoreVersion, recentNotes, descendants,
-  openCapture, createNote, toast, flushAll, nbPathString, allTags, renameTag, moveNote, noteText,
+  openCapture, createNote, toast, flushAll, nbPathString, allTags, renameTag, moveNote, noteText, nbStyle,
 } from './store.js';
 import { Icon, typeIcon } from './icons.js';
 import { openMenu, confirmDialog, promptDialog } from './dialogs.js';
@@ -28,6 +28,10 @@ export function titleFor(id) {
   const n = S.notes.get(id);
   return n ? [n.title || 'Untitled', typeIcon(n.type)] : ['Missing note', 'file'];
 }
+// The notebook colour for a tab: the notebook itself, or the notebook a note is in.
+const tabStyle = (id) => id.startsWith('nb:') ? nbStyle(id.slice(3)) : nbStyle(S.notes.get(id)?.notebookId);
+// A small dot in a notebook's colour, or nothing when it has none.
+const NbDot = ({ id }) => { const st = nbStyle(id); return st ? html`<span class="nb-dot" style=${st}></span>` : null; };
 
 /* ---------------- panes & tabs ---------------- */
 export function Pane({ pane, index }) {
@@ -44,10 +48,10 @@ export function Pane({ pane, index }) {
       <div class="tabs" role="tablist">
         ${pane.tabs.map((t, ti) => {
           const [title, icon] = titleFor(t.cur);
-          return html`<div key=${t.id} role="tab" aria-selected=${ti === pane.active} class=${cls('tab', ti === pane.active && 'on')} draggable="true" title=${title}
+          return html`<div key=${t.id} role="tab" aria-selected=${ti === pane.active} class=${cls('tab', ti === pane.active && 'on')} style=${tabStyle(t.cur)} draggable="true" title=${title}
             onDragStart=${(e) => e.dataTransfer.setData('application/x-tab', `${index}:${ti}`)}
             onClick=${() => selectTab(index, ti)} onAuxClick=${(e) => e.button === 1 && closeTab(index, ti)}>
-            <${Icon} name=${icon} size=${14} /><span class="tab-title">${title}</span>
+            <${Icon} name=${icon} size=${14} class="nb-ic" /><span class="tab-title">${title}</span>
             <button class="tab-x" aria-label=${'Close ' + title} onClick=${(e) => { e.stopPropagation(); closeTab(index, ti); }}><${Icon} name="x" size=${13} /></button>
           </div>`;
         })}
@@ -76,7 +80,7 @@ function NoteView({ note, pane }) {
   const [title, setTitle] = useState(note.title);
   useEffect(() => setTitle(note.title), [note.id, note.rev]);
   const saveTitle = useMemo(() => debounce((t) => updateNote(note.id, { title: t }), 250), [note.id]);
-  const crumbs = html`<div class="crumbs">${path.length ? path.map((b, i) => html`${i > 0 && html`<span class="crumb-sep">/</span>`}<button class="crumb" onClick=${() => open('nb:' + b.id)}>${b.name}</button>`) : html`<button class="crumb" onClick=${() => open('inbox')}>Inbox</button>`}</div>`;
+  const crumbs = html`<div class="crumbs">${path.length > 0 && html`<${NbDot} id=${note.notebookId} />`}${path.length ? path.map((b, i) => html`${i > 0 && html`<span class="crumb-sep">/</span>`}<button class="crumb" onClick=${() => open('nb:' + b.id)}>${b.name}</button>`) : html`<button class="crumb" onClick=${() => open('inbox')}>Inbox</button>`}</div>`;
   const actions = html`<div class="note-actions">
       <button class=${cls('icon-btn', note.pinned && 'on')} title=${note.pinned ? 'Unpin' : 'Pin'} aria-label=${note.pinned ? 'Unpin' : 'Pin'} aria-pressed=${!!note.pinned} onClick=${() => togglePin(note.id)}><${Icon} name="pin" size=${17} /></button>
       <button class=${cls('btn ghost small links-btn', inspector && S.ws.inspectorTab === 'links' && 'on')} title=${`Backlinks and related notes (${MOD}${SHIFT}I)`} onClick=${() => setWs({ inspector: !(inspector && S.ws.inspectorTab === 'links'), inspectorTab: 'links' })}><${Icon} name="link" size=${16} />${bl}</button>
@@ -276,13 +280,14 @@ function VersionModal({ v, note, close }) {
 /* ---------------- shared note list ---------------- */
 function NoteCard({ n, showNb = true }) {
   const progress = n.type === 'pdf' && n.content.pages ? Math.round(((n.view?.page || 1) / n.content.pages) * 100) : null;
-  return html`<button class=${'note-card t-' + n.type} draggable="true" onDragStart=${(e) => e.dataTransfer.setData('application/x-note-id', n.id)}
+  const st = nbStyle(n.notebookId);
+  return html`<button class=${cls('note-card t-' + n.type, st && 'has-nbc')} style=${st} draggable="true" onDragStart=${(e) => e.dataTransfer.setData('application/x-note-id', n.id)}
     onClick=${(e) => open(n.id, { split: mod(e) })} onContextMenu=${(e) => openMenu(e, noteMenu(n, { inList: true }), { at: 'pointer' })}>
     <span class="nc-type"><${Icon} name=${typeIcon(n.type)} size=${14} />${n.type === 'pdf' ? `PDF · p. ${n.view?.page || 1} of ${n.content.pages || '?'}` : n.type === 'canvas' ? 'Canvas' : 'Page'}${n.pinned ? html`<${Icon} name="pin" size=${12} class="pin-ic" />` : ''}</span>
     <span class="nc-title">${n.title || 'Untitled'}</span>
     <span class="nc-ex">${(n.text || '').slice(0, 140) || (n.type === 'canvas' ? `${n.content.items?.length || 0} cards` : '')}</span>
     ${progress !== null && html`<span class="nc-progress" aria-label=${`${progress}% read`}><span style=${`width:${progress}%`}></span></span>`}
-    <span class="nc-foot">${showNb && html`<span class="nc-nb">${notebookPath(n.notebookId).map((b) => b.name).slice(-1)[0] || 'Inbox'}</span>`}<span>${fmtRelative(n.opened || n.updated)}</span></span>
+    <span class="nc-foot">${showNb && html`<span class="nc-nb"><${NbDot} id=${n.notebookId} />${notebookPath(n.notebookId).map((b) => b.name).slice(-1)[0] || 'Inbox'}</span>`}<span>${fmtRelative(n.opened || n.updated)}</span></span>
   </button>`;
 }
 function NoteRowItem({ n, showNb, active, onFocus, trash }) {
@@ -298,7 +303,7 @@ function NoteRowItem({ n, showNb, active, onFocus, trash }) {
     </span>
     <span class="lr-meta">
       ${(n.tags || []).slice(0, 3).map((t) => html`<span class="mini-tag">#${t}</span>`)}
-      ${showNb && html`<span class="lr-nb">${nbPathString(n.notebookId) || 'Inbox'}</span>`}
+      ${showNb && html`<span class="lr-nb"><${NbDot} id=${n.notebookId} />${nbPathString(n.notebookId) || 'Inbox'}</span>`}
       <span class="lr-time">${trash ? 'Deleted ' + fmtRelative(n.trashed) : fmtRelative(n.updated)}</span>
     </span>
     ${trash && html`<span class="lr-actions"><button class="btn small" onClick=${(e) => { e.stopPropagation(); restoreNote(n.id); }}>Restore</button>
@@ -351,7 +356,7 @@ function ListView({ id }) {
     <div class="list-inner">
       ${nb && path.length > 1 && html`<div class="crumbs">${path.slice(0, -1).map((b) => html`<button class="crumb" onClick=${() => open('nb:' + b.id)}>${b.name}</button><span class="crumb-sep">/</span>`)}</div>`}
       <header class="list-head">
-        <h1><${Icon} name=${icon} size=${24} />${title}</h1>
+        <h1 style=${nb ? nbStyle(nb.id) : ''}><${Icon} name=${icon} size=${24} class=${nb ? 'nb-ic' : ''} />${title}</h1>
         <span class="list-count">${notes.length} ${notes.length === 1 ? 'note' : 'notes'}</span>
         <span class="spacer"></span>
         ${id === 'trash' ? notes.length > 0 && html`<button class="btn danger small" onClick=${async () => { if (await confirmDialog('Empty the Trash?', `${notes.length} notes will be deleted forever.`, 'Empty Trash', true)) emptyTrash(); }}>Empty Trash</button>`
@@ -364,7 +369,7 @@ function ListView({ id }) {
       </header>
       ${sub && html`<p class="list-sub">${sub}</p>`}
       ${kids.length > 0 && html`<div class="nb-grid">
-        ${kids.map((b) => html`<button class="nb-card" onClick=${(e) => open('nb:' + b.id, { split: mod(e) })} onContextMenu=${(e) => openMenu(e, notebookMenu(b), { at: 'pointer' })}>
+        ${kids.map((b) => html`<button class="nb-card" style=${nbStyle(b.id)} onClick=${(e) => open('nb:' + b.id, { split: mod(e) })} onContextMenu=${(e) => openMenu(e, notebookMenu(b), { at: 'pointer' })}>
           <${Icon} name="book" size=${18} /><span class="nb-name">${b.name}</span><span class="nb-meta">${countDeep(b.id)} notes${childNotebooks(b.id).length ? ` · ${childNotebooks(b.id).length} sections` : ''}</span></button>`)}
         <button class="nb-card add" onClick=${() => newNotebook(nb.id)}><${Icon} name="plus" size=${18} /><span class="nb-name">New section</span></button>
       </div>`}
@@ -459,7 +464,7 @@ function Home() {
             <div class="sec-head"><h2>Notebooks</h2><button class="linklike" onClick=${() => newNotebook()}>New</button></div>
             <div class="nb-list">${roots.map((b) => {
               const last = liveNotes().filter((n) => [b.id, ...descendants(b.id)].includes(n.notebookId)).sort((x, y) => y.updated - x.updated)[0];
-              return html`<button class="nb-line" onClick=${() => open('nb:' + b.id)}><${Icon} name="book" size=${16} /><span class="nb-name">${b.name}</span><span class="nb-meta">${countDeep(b.id)} · ${last ? fmtRelative(last.updated) : 'empty'}</span></button>`;
+              return html`<button class="nb-line" style=${nbStyle(b.id)} onClick=${(e) => open('nb:' + b.id, { split: mod(e) })} onContextMenu=${(e) => openMenu(e, notebookMenu(b), { at: 'pointer' })}><${Icon} name="book" size=${16} class="nb-ic" /><span class="nb-name">${b.name}</span><span class="nb-meta">${countDeep(b.id)} · ${last ? fmtRelative(last.updated) : 'empty'}</span></button>`;
             })}</div>
           </section>`}
         </div>

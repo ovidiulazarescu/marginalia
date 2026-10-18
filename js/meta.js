@@ -1,5 +1,5 @@
 import { html, useState, useRef } from './lib.js';
-import { S, updateNote, notebookPath, allTags, normTag, open, moveNote } from './store.js';
+import { S, updateNote, notebookPath, allTags, normTag, open, moveNote, nbStyle } from './store.js';
 import { pickNotebook } from './dialogs.js';
 import { Icon } from './icons.js';
 import { fmtRelative } from './util.js';
@@ -18,8 +18,8 @@ export function NoteMeta({ note, compact }) {
   };
   const known = allTags().map(([t]) => t).filter((t) => !(note.tags || []).includes(t) && (!val || t.includes(normTag(val)))).slice(0, 6);
   return html`<div class=${'note-meta' + (compact ? ' compact' : '')}>
-    ${compact && html`<button class="chip loc" onClick=${move} title="Move to another notebook">
-      <${Icon} name=${path.length ? 'book' : 'inbox'} size=${14} />
+    ${compact && html`<button class="chip loc" style=${nbStyle(note.notebookId)} onClick=${move} title="Move to another notebook">
+      <${Icon} name=${path.length ? 'book' : 'inbox'} size=${14} class="nb-ic" />
       ${path.length ? path.map((b, i) => html`${i > 0 && html`<span class="crumb-sep">/</span>`}<span>${b.name}</span>`) : html`<span>Inbox</span>`}
     </button>`}
     ${(note.tags || []).map((t) => html`<span class="chip tag">

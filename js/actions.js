@@ -1,5 +1,5 @@
 // Shared commands used by the sidebar, palette, list views and keyboard shortcuts.
-import { S, createNote, open, importPdf, createNotebook, updateNotebook, deleteNotebook, trashNote, restoreNote, destroyNote, updateNote, duplicateNote, moveNote, snapshot, toast, setWs, notebookPath, currentId, countDeep, flushAll } from './store.js';
+import { S, createNote, open, importPdf, createNotebook, updateNotebook, deleteNotebook, trashNote, restoreNote, destroyNote, updateNote, duplicateNote, moveNote, snapshot, toast, setWs, notebookPath, currentId, countDeep, flushAll, NB_COLORS, nbColor } from './store.js';
 import { promptDialog, confirmDialog, pickNotebook } from './dialogs.js';
 import { pickFiles } from './util.js';
 import { TEMPLATES } from './templates.js';
@@ -103,6 +103,9 @@ export function notebookMenu(nb) {
     { label: 'New canvas here', icon: 'canvas', run: () => newCanvas(nb.id) },
     { label: 'Import PDF here…', icon: 'pdf', run: () => importPdfs(nb.id) },
     { label: 'New notebook inside…', icon: 'book', run: () => newNotebook(nb.id) },
+    '-',
+    { header: 'Colour' },
+    { label: 'Notebook colour', swatches: [[null, nbColor(nb.parentId) ? 'Same as parent' : 'No colour'], ...NB_COLORS], value: nb.color || null, inherit: nbColor(nb.parentId), pick: (c) => updateNotebook(nb.id, { color: c }) },
     '-',
     { label: 'Rename…', icon: 'text', run: () => renameNotebook(nb.id) },
     { label: 'Move into…', icon: 'move', run: async () => { const p = await pickNotebook(`Move “${nb.name}” into`, nb.parentId); if (p !== undefined && p !== nb.id) updateNotebook(nb.id, { parentId: p }); } },
