@@ -9,6 +9,11 @@ No accounts, no tracking, no AI. Your notes live in your browser and, if you wan
   <img alt="Marginalia's home view: recent notes, a quick-capture box, notebooks and tags in the sidebar" src="docs/screenshot-light.png">
 </picture>
 
+## Documentation
+
+- [User guide](docs/user-guide.md): how to use every feature, with keyboard shortcuts and troubleshooting.
+- [Technical architecture](docs/architecture.md): how the app is built, including the data model, sync protocol, server API and security model.
+
 ## Features
 
 - **Pages** with a formatting toolbar, Markdown shortcuts, a `/` block menu, checklists, tables, callouts, images you can resize, and sketch blocks you draw in with a pen or stylus.
@@ -21,7 +26,7 @@ No accounts, no tracking, no AI. Your notes live in your browser and, if you wan
 - **Quick capture** (`⌘⇧Space`) sends a thought straight to your Inbox.
 - **Version history**: automatic snapshots and named versions (`⌘S`), with a diff view and restore.
 - **Export and import**: Markdown, HTML, Word, plain text, PNG, SVG, PDF with your annotations burned in, and a full ZIP backup. Import Markdown, text, HTML, PDFs, whole folders and backups.
-- **Offline-first sync**: each browser keeps a full copy, and an optional small server keeps your devices in sync.
+- **Local-first sync**: each browser keeps a full copy, and an optional small server keeps your devices in sync.
 - Light and dark themes, built for keyboard and stylus. Press `⌘/` (`Ctrl /` on Windows and Linux) in the app for every shortcut.
 
 ## Quick start
@@ -42,7 +47,7 @@ There's no build step: the app is plain ES modules. Its libraries (Preact, pdf.j
 
 ## How your notes are stored
 
-**In the browser.** Every browser keeps a full copy of your notes in IndexedDB, so the app is fast and keeps working offline.
+**In the browser.** Every browser keeps a full copy of your notes in IndexedDB, so the app is fast and an open tab keeps working if your connection drops. Changes upload when it returns. Loading the app from scratch needs the server to be reachable.
 
 **On the server.** `serve.py` serves the app and stores a copy of your notes: notebooks, notes, versions and PDF text go into SQLite at `data/marginalia.db`, and PDFs into `data/files/`. It uses only the Python standard library.
 
@@ -70,7 +75,7 @@ docker compose -f deploy/docker-compose.yml up -d
 
 The server has no user accounts. Anyone who can reach its port can read and change your notes, so either keep it on your local network or put a login in front of it.
 
-- **Sync token.** Set `MARGINALIA_TOKEN` (or `--token`) to a long random value, for example the output of `openssl rand -hex 24`. Every API request must then carry it, and you enter it once per browser under **Settings → Sync**.
+- **Sync token.** Set `MARGINALIA_TOKEN` (or `--token`) to a long random value, for example the output of `openssl rand -hex 24`. Every API request must then carry it, and you enter it once per browser under **Settings → Sync**. Without a token, other websites open in your browser can send changes to a server they can reach, even one on `localhost`, so set one anywhere you don't fully trust. The [architecture document](docs/architecture.md#security-model) has the details.
 - **Access login.** When you expose the server to the internet, put an authenticating proxy in front of it, such as Cloudflare Access (see below). The app notices when that login expires and shows **Sign-in expired** in the sidebar; a reload signs you back in.
 
 ### TrueNAS SCALE, with an optional Cloudflare tunnel
