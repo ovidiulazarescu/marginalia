@@ -75,8 +75,21 @@ docker compose -f deploy/docker-compose.yml up -d
 
 The server has no user accounts. Anyone who can reach its port can read and change your notes, so either keep it on your local network or put a login in front of it.
 
-- **Sync token.** Set `MARGINALIA_TOKEN` (or `--token`) to a long random value, for example the output of `openssl rand -hex 24`. Every API request must then carry it, and you enter it once per browser under **Settings → Sync**. Without a token, other websites open in your browser can send changes to a server they can reach, even one on `localhost`, so set one anywhere you don't fully trust. The [architecture document](docs/architecture.md#security-model) has the details.
+- **Sync token.** Set `MARGINALIA_TOKEN` (or `--token`) to a long random value, for example the output of `openssl rand -hex 24`. Every API request must then carry it, and you enter it once per browser under **Settings → Sync**. Set one anywhere you don't fully trust.
 - **Access login.** When you expose the server to the internet, put an authenticating proxy in front of it, such as Cloudflare Access (see below). The app notices when that login expires and shows **Sign-in expired** in the sidebar; a reload signs you back in.
+- **Allowed addresses.** Set `MARGINALIA_ALLOWED_HOSTS` (or `--allowed-hosts`) to the domain names you use, separated by commas, for example `notes.example.com`. The server then refuses every other domain name.
+
+The server refuses requests that other websites send through your browser, with or without a token, so they can't read or change your notes on a server they can reach, even one on `localhost`. To do that it checks which address each request was sent to. These addresses work with no setup:
+
+| Address | `python3 serve.py` | `--host 0.0.0.0`, as in Docker |
+| --- | --- | --- |
+| `localhost`, an IP address, or a private name such as `nas` or `nas.local` | Yes | Yes |
+| A domain name through a tunnel or proxy on port 80 or 443, such as `notes.example.com` | No | Yes |
+| A domain name with a port, such as `notes.example.com:8095` | No | No |
+
+A **No** becomes a yes if you add the name to the allowed addresses or set a token. If a page says `This server does not answer to that address`, that's the fix.
+
+If you serve the app directly on port 80, with no tunnel, set a token or the allowed addresses, because the server can't tell that apart from a proxy. These checks stop websites, not people on your network, who still need a token to be kept out. The [architecture document](docs/architecture.md#security-model) has the details.
 
 ### TrueNAS SCALE, with an optional Cloudflare tunnel
 

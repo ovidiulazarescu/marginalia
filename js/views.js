@@ -9,6 +9,7 @@ import { openMenu, confirmDialog, promptDialog } from './dialogs.js';
 import { PageEditor } from './editor.js';
 import { CanvasView } from './canvas.js';
 import { PdfView } from './pdfview.js';
+import { sanitizeHTML } from './md.js';
 import { NoteMeta } from './meta.js';
 import { noteMenu, notebookMenu, newPage, newCanvas, importPdfs, newNotebook, togglePin, saveVersion, moveNoteDialog, importAny } from './actions.js';
 import { backupAll, exportNotebookZip, restoreBackup } from './export.js';
@@ -240,6 +241,8 @@ function HistoryPanel({ note }) {
     ${open_ && html`<${VersionModal} v=${open_} note=${note} close=${() => setOpen(null)} />`}
   </section>`;
 }
+// The editor sizes images when it loads a note; a preview has to do the same.
+const sizeImages = (el) => el?.querySelectorAll('img[data-w]').forEach((i) => { i.style.width = i.dataset.w + '%'; });
 function VersionModal({ v, note, close }) {
   const [mode, setMode] = useState('changes');
   const vText = v.text ?? noteText(v);
@@ -266,7 +269,7 @@ function VersionModal({ v, note, close }) {
               const head = i > 0 ? v.slice(0, 160) : '', tail = i < parts.length - 1 ? v.slice(-160) : '';
               return html`<span>${head}</span><span class="fold">⋯ ${(v.length - head.length - tail.length).toLocaleString()} unchanged characters ⋯</span><span>${tail}</span>`;
             })}</div>`
-          : v.type === 'page' ? html`<div class="prose" dangerouslySetInnerHTML=${{ __html: v.content.html || '<p class="muted">Empty</p>' }}></div>`
+          : v.type === 'page' ? html`<div class="prose" ref=${sizeImages} dangerouslySetInnerHTML=${{ __html: sanitizeHTML(v.content.html) || '<p class="muted">Empty</p>' }}></div>`
           : html`<pre class="diff">${vText || '(no text)'}</pre>`}
       </div>
       <div class="dialog-actions">

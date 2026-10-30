@@ -466,6 +466,7 @@ Requests use `redirect: 'manual'`, because following a Cloudflare Access redirec
 | `--port` | `MARGINALIA_PORT` | `5178` | Port |
 | `--data` | `MARGINALIA_DATA` | `data/` beside `serve.py` | Folder for the database and PDFs |
 | `--token` | `MARGINALIA_TOKEN` | Empty | Bearer token required for `/api` |
+| `--allowed-hosts` | `MARGINALIA_ALLOWED_HOSTS` | Empty | Comma-separated domain names this server answers to. See [Cross-site requests](#cross-site-requests) |
 | `--no-open` | | Off | Don't open a browser on start |
 
 ### Storage
@@ -490,6 +491,11 @@ The server treats records as opaque JSON. It reads only a few fields when buildi
 
 Paths outside `/api/` serve the app's files. Every API route except `/api/health` requires `Authorization: Bearer <token>` when a token is set.
 
+Two checks run first, on app files and API routes alike, and both answer `403` with an `error` message and close the connection:
+
+- **Host.** Every request's `Host` header has to pass the rules under [Cross-site requests](#cross-site-requests).
+- **Origin.** A `POST` or `PUT` with an `Origin` header has to come from the address it was sent to. Requests with no `Origin` pass, because browsers always send one on these methods, so they come from scripts and tools.
+
 #### `GET /api/health`
 
 Identifies the server. It never requires a token, so the app can tell that one is needed.
@@ -500,7 +506,7 @@ Identifies the server. It never requires a token, so the app can tell that one i
 
 #### `POST /api/push`
 
-Sends changed records, up to 64 MiB per request.
+Sends changed records, up to 64 MiB per request. The `Content-Type` must be `application/json`, with or without parameters such as `charset`. Anything else gets `415`.
 
 ```json
 {
@@ -559,23 +565,53 @@ Marginalia is built for one person, or a small trusted group, using their own se
 | Area | Protection |
 | --- | --- |
 | API access | Optional bearer token, compared in constant time |
+| Cross-site writes | `Origin` check on `POST` and `PUT`, and `/api/push` accepts only `application/json` |
+| DNS rebinding | `Host` check on every request |
 | Public hosting | An authenticating proxy, such as Cloudflare Access, covering the app and API |
 | File access | Static allowlist, plus a strict pattern for file IDs that prevents path traversal |
-| Stored HTML | `sanitizeHTML()` allowlist when notes load in the editor |
+| Stored HTML | `sanitizeHTML()` allowlist when notes load in the editor and in version previews |
 | Links | Only `http`, `https` and `mailto` survive sanitising, and external links open with `noopener noreferrer` |
 | PDFs | pdf.js runs with `isEvalSupported: false` |
 | Notebook colours | Only known colour keys reach inline styles |
 | Request size | 64 MiB per JSON request, 1 GiB per file |
 | Sniffing | `X-Content-Type-Options: nosniff` on every response |
 
+### Cross-site requests
+
+A web page open in the user's browser can send requests to any server that browser can reach, including `localhost`. Three checks in `serve.py` stop that, with or without a token.
+
+**Forged writes.** A page on another site can send a `text/plain` POST without a CORS preflight, so `/api/push` accepts only `application/json`, which does need one. The server never answers a preflight (`OPTIONS` returns 501), so the browser stops those requests. The type is parsed rather than searched, so `text/plain; application/json` is refused.
+
+**Foreign origins.** `POST` and `PUT` are refused if `Origin` doesn't match `Host`, comparing name and port but not scheme, because TLS usually ends at a proxy. A request also passes if `Origin` matches `X-Forwarded-Host`, for proxies that rewrite `Host`, or names a host on the allowed list. A cross-site page can't set `X-Forwarded-Host`, because a custom header needs a preflight. `Origin: null`, sent by sandboxed frames, is refused. A missing `Origin` passes, so scripts keep working.
+
+**DNS rebinding.** A hostile site can repoint its own domain at the server's address. Its page is then same-origin with the server, so `Origin` matches `Host` and the checks above pass. Only `Host` gives it away, because it carries the attacker's domain name.
+
+Two facts make it possible to check `Host` without configuration:
+
+- Rebinding needs a public domain name that the attacker controls. IP addresses and names that can't be registered publicly are safe.
+- A browser connecting directly to a server on a non-standard port puts that port in `Host`. A request with a public name and no port came through something listening on port 80 or 443, such as a Cloudflare tunnel.
+
+`host_allowed()` applies these rules in order. The standard ports 80 and 443 count as no port.
+
+| `Host` | Result |
+| --- | --- |
+| Missing | Accepted. Browsers always send it |
+| Malformed | Refused |
+| On the allowed list, on any port | Accepted |
+| An IP address, a name with no dot, or a name ending in `.localhost`, `.local`, `.lan`, `.internal` or `.home.arpa` | Accepted |
+| Any other name, when an allowed list is set | Refused |
+| Any other name, when a token is set | Accepted, because a rebound page has no token and stops at the `401` |
+| Any other name with no port, when listening beyond loopback | Accepted, because it looks like a proxy |
+| Any other name | Refused |
+
+The defaults keep `localhost`, LAN addresses and existing tunnels working with no changes. `cloudflared` passes the public `Host` through unless the tunnel's **HTTP Host Header** setting is used, and then it puts the public name in `X-Forwarded-Host`. A name refused by these rules can be added with `--allowed-hosts`, and the error message says so. Each entry is a name, and any port on it is accepted, so don't list a name shared with services you don't trust.
+
 ### Known gaps
 
 **Run the server without a token only on a machine and network you trust, and treat the token as necessary on a shared LAN.** These behaviours were confirmed against the current code:
 
-- **Cross-site writes when no token is set.** The server doesn't check `Origin`, `Host` or `Content-Type`. A web page in the user's browser can send a `text/plain` POST to `/api/push` on a server it can reach, including `localhost`, and the server accepts it. The page can't read the response, but it can add or change notes.
-- **Reads through DNS rebinding when no token is set.** With no `Host` check, a malicious site that rebinds its domain to the server's address can read `/api/changes` as if it were same-origin.
-- **A token blocks both**, because a cross-site page can't attach an `Authorization` header without a CORS preflight, and the server doesn't answer one (`OPTIONS` returns 501).
-- **Version previews aren't sanitised.** The page preview in the version dialog renders stored HTML directly. Combined with the cross-site write above, a crafted version record could run script in the app's origin. A backup from an untrusted source carries the same risk.
+- **The checks above only stop browsers.** Anyone who can reach the port with their own client can set any header. Only a token or an authenticating proxy stops them.
+- **Rebinding is still possible on port 80 or 443 without a token or an allowed list.** A server listening beyond loopback accepts a public name with no port, because that's what a tunnel looks like. If a browser can also reach it directly on port 80, through a port mapping or a LAN proxy, a rebound page gets in. Set `--allowed-hosts` or a token on such a server.
 - **The token is stored in `localStorage`, in plain text**, and on a plain-HTTP LAN it travels unencrypted.
 - **Data at rest isn't encrypted**, in the browser or on the server. Rely on disk or dataset encryption if you need it.
 - **There's no rate limiting**, and `/api/health` reveals whether a token is required.
@@ -599,6 +635,7 @@ flowchart LR
 
 - **Code** mounts read-only. Updating means `git pull`, and browsers get the new files on reload. Restart the container only if `serve.py` changed.
 - **Data** is a separate mount, so it can be snapshotted and replicated independently. A ZFS snapshot captures the database with its WAL file, as a crash-consistent copy.
+- **Allowed addresses** need no setup for this layout: the LAN address and the tunnel's hostname both pass the [`Host` rules](#cross-site-requests). Setting `MARGINALIA_ALLOWED_HOSTS` to the hostname is stricter, and refuses every other domain name.
 - **Cloudflare** overrides `Cache-Control` by default, and can keep old files in browsers for up to 4 hours. The README describes a cache rule that fixes this.
 
 The [README](../README.md#self-hosting) has the full steps.
