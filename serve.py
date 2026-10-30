@@ -7,11 +7,11 @@
 Notes, notebooks, versions and PDF text live in SQLite (DATA/marginalia.db);
 PDF files are stored as plain files in DATA/files/. Uses only the Python standard library.
 
-Environment variables MARGINALIA_HOST, MARGINALIA_PORT, MARGINALIA_DATA and
-MARGINALIA_TOKEN can be used instead of the flags. When a token is set, every
-/api request must send "Authorization: Bearer <token>".
+Environment variables MARGINALIA_HOST, MARGINALIA_PORT, MARGINALIA_DATA,
+MARGINALIA_TOKEN and MARGINALIA_ALLOWED_HOSTS can be used instead of the flags.
+When a token is set, every /api request must send "Authorization: Bearer <token>".
 """
-import argparse, hmac, http.server, json, os, re, sqlite3, sys, threading, time, uuid, webbrowser
+import argparse, hmac, http.server, ipaddress, json, os, re, sqlite3, sys, threading, time, uuid, webbrowser
 from urllib.parse import urlparse, parse_qs
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -21,6 +21,28 @@ STATIC = re.compile(r'^/(index\.html|styles\.css|js/[A-Za-z0-9_-]+\.js)$')
 TYPES = {'.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8'}
 MAX_JSON = 64 * 1024 * 1024
 MAX_FILE = 1024 * 1024 * 1024
+HOST = re.compile(r'^(\[[0-9a-f:.]+\]|[a-z0-9._-]+)(?::(\d{1,5}))?$')
+LOOPBACK = ('127.0.0.1', 'localhost', '::1')
+# Nobody can register these in public DNS, so a hostile site can't point one at this server.
+PRIVATE_NAMES = ('.localhost', '.local', '.lan', '.internal', '.home.arpa')
+ALLOW_HINT = 'If this is your address, add it to --allowed-hosts or MARGINALIA_ALLOWED_HOSTS.'
+
+
+def parse_host(value):
+    """'Notes.example.com:443' -> ('notes.example.com', None); None if malformed. Standard ports count as no port."""
+    m = HOST.match((value or '').strip().lower())
+    return (m[1], None if m[2] in (None, '80', '443') else m[2]) if m else None
+
+
+def can_rebind(name):
+    """DNS rebinding needs a public name the attacker controls; addresses and private names are safe."""
+    if '.' not in name or name.endswith(PRIVATE_NAMES):
+        return False
+    try:
+        ipaddress.ip_address(name.strip('[]'))
+        return False
+    except ValueError:
+        return True
 
 
 class Store:
@@ -129,7 +151,7 @@ class Store:
         return dict(rows)
 
 
-def make_handler(store, token):
+def make_handler(store, token, allowed=frozenset(), exposed=False):
     class Handler(http.server.BaseHTTPRequestHandler):
         protocol_version = 'HTTP/1.1'
         server_version = 'Marginalia'
@@ -159,6 +181,42 @@ def make_handler(store, token):
             got = self.headers.get('Authorization', '')
             return hmac.compare_digest(got.encode(), f'Bearer {token}'.encode())
 
+        def reject(self, code, error):
+            # The request body goes unread, so this connection can't carry another request.
+            self.send(code, {'error': error}, extra={'Connection': 'close'})
+
+        def host_allowed(self):
+            """The DNS rebinding defence. A rebound page really is same-origin, so only Host gives it away."""
+            value = self.headers.get('Host')
+            if value is None:
+                return True  # only non-browser clients leave it out
+            host = parse_host(value)
+            if not host:
+                return False
+            name, port = host
+            if name in allowed or not can_rebind(name):
+                return True
+            if allowed:
+                return False  # a list means exactly those names
+            if token:
+                return True  # a rebinding page has no token, so it stops at the 401
+            # A browser reaching this server directly has to name its port, as attacker.example:8095.
+            # A public name without a port came through a proxy on 80 or 443, such as a Cloudflare tunnel.
+            return exposed and port is None
+
+        def same_origin(self):
+            """The cross-site request defence for POST and PUT."""
+            origin = self.headers.get('Origin')
+            if origin is None:
+                return True  # browsers always send Origin on POST and PUT, so this isn't one
+            source = parse_host(urlparse(origin).netloc)
+            if not source:
+                return False  # includes "null", from sandboxed frames
+            # A proxy that rewrites Host keeps the public name in X-Forwarded-Host. A cross-site
+            # page can't set that header without a preflight, which this server never answers.
+            forwarded = (self.headers.get('X-Forwarded-Host') or '').split(',')[0]
+            return source[0] in allowed or source in (parse_host(self.headers.get('Host')), parse_host(forwarded))
+
         def body(self, limit):
             n = int(self.headers.get('Content-Length') or 0)
             if n > limit:
@@ -182,6 +240,10 @@ def make_handler(store, token):
         def route(self):
             url = urlparse(self.path)
             path = url.path
+            if not self.host_allowed():
+                return self.reject(403, f'This server does not answer to that address. {ALLOW_HINT}')
+            if self.command in ('POST', 'PUT') and not self.same_origin():
+                return self.reject(403, f'Cross-origin request refused. {ALLOW_HINT}')
             if not path.startswith('/api/'):
                 if self.command in ('GET', 'HEAD'):
                     return self.static(path)
@@ -191,6 +253,9 @@ def make_handler(store, token):
             if not self.authorized():
                 return self.send(401, {'error': 'unauthorized'})
             if path == '/api/push' and self.command == 'POST':
+                # text/plain is what a cross-site page can send without a preflight.
+                if self.headers.get_content_type() != 'application/json':
+                    return self.reject(415, 'Content-Type must be application/json')
                 payload = json.loads(self.body(MAX_JSON) or b'{}')
                 return self.send(200, {'results': store.push(payload.get('records') or [])})
             if path == '/api/changes' and self.command == 'GET':
@@ -242,19 +307,27 @@ def main():
     p.add_argument('--port', type=int, default=int(env('MARGINALIA_PORT', '5178')))
     p.add_argument('--data', default=env('MARGINALIA_DATA', os.path.join(ROOT, 'data')), help='folder for the database and PDFs')
     p.add_argument('--token', default=env('MARGINALIA_TOKEN', ''), help='require this bearer token for /api')
+    p.add_argument('--allowed-hosts', default=env('MARGINALIA_ALLOWED_HOSTS', ''), help='comma-separated domain names this server answers to, for example notes.example.com')
     p.add_argument('--no-open', action='store_true', help="don't open a browser")
     a = p.parse_args()
     port = a.port_pos or a.port
+    entries = [e.strip() for e in a.allowed_hosts.split(',') if e.strip()]
+    if not all(parse_host(e) for e in entries):
+        p.error('--allowed-hosts takes names such as notes.example.com, without http://')
+    allowed = frozenset(parse_host(e)[0] for e in entries)
+    exposed = a.host not in LOOPBACK
 
     store = Store(a.data)
     http.server.ThreadingHTTPServer.allow_reuse_address = True
-    httpd = http.server.ThreadingHTTPServer((a.host, port), make_handler(store, a.token))
+    httpd = http.server.ThreadingHTTPServer((a.host, port), make_handler(store, a.token, allowed, exposed))
     shown = 'localhost' if a.host in ('127.0.0.1', '0.0.0.0') else a.host
     url = f'http://{shown}:{port}'
     print(f'Marginalia is running at {url}  (Ctrl+C to stop)')
     print(f'Data folder: {store.dir}')
-    if not a.token and a.host not in ('127.0.0.1', 'localhost'):
+    if not a.token and exposed:
         print('Note: no --token set. Anyone who can reach this port can read and change your notes.')
+        if not allowed:
+            print('Note: no --allowed-hosts set, so any domain name is accepted on ports 80 and 443.')
     if not a.no_open:
         try: webbrowser.open(url)
         except Exception: pass

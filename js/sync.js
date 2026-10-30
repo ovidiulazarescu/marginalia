@@ -42,6 +42,8 @@ async function api(path, { method = 'GET', body, json = true, timeout = 30e3 } =
   if (res.type === 'opaqueredirect' || (res.status >= 300 && res.status < 400)) throw new SyncError('expired', 'Your sign-in expired. Reload the page to sign in again.');
   if (res.status === 401) throw new SyncError('token', getToken() ? 'The sync token was rejected.' : 'This server needs a sync token.');
   if (res.status === 404 && path === 'health') throw new SyncError('off', '');
+  // serve.py refuses an address it doesn't recognise, and says how to allow it.
+  if (res.status === 403) throw new SyncError('error', (await res.json().catch(() => null))?.error || 'The server answered 403.');
   if (!res.ok) throw new SyncError('error', `The server answered ${res.status}.`);
   if (!json) return res;
   const ct = res.headers.get('content-type') || '';
