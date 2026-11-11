@@ -267,7 +267,7 @@ A page's content is sanitised HTML, which keeps editing simple and makes the sto
 | `<div class="callout">` | Callout |
 | `<div class="ink-block" data-ink>` | Sketch, with its strokes as JSON |
 | `<pre data-lang>` | Code block |
-| `<img data-w data-align>` | Image with a percentage width and alignment. The source is an inline data URL |
+| `<img data-w data-align>` | Image with a width as a percentage of the text column, and alignment. Values up to 300 are allowed: above 100 the image is centred and extends into the margins, capped at the pane's width through the `--avail` CSS variable. The source is an inline data URL |
 
 ### Other records
 

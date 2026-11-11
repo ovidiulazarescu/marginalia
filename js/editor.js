@@ -97,6 +97,21 @@ function posAt(pre, index) {
 const textToParagraphs = (t) => t.replace(/\r\n?/g, '\n').replace(/\n+$/, '').split('\n')
   .map((l) => `<p>${escapeHtml(l).replace(/^[ \t]+/, (w) => w.replace(/\t/g, '    ').replace(/ /g, '&nbsp;')) || '<br>'}</p>`).join('');
 
+// Image widths are a percentage of the text column. Up to 100% they sit in the column;
+// wider images are centred and spill into the margins, but never past the pane's own
+// width (--avail, kept up to date on .page-doc by PageEditor).
+export const IMG_MAX_PCT = 300;
+function applyImgWidth(img) {
+  const pct = Number(img.dataset.w) || 0;
+  const s = img.style;
+  if (pct > 100) {
+    const w = `min(${pct}%, var(--avail, 100%))`;
+    s.width = w; s.maxWidth = 'none'; s.marginLeft = `calc((100% - ${w}) / 2)`;
+  } else {
+    s.width = pct ? pct + '%' : ''; s.maxWidth = ''; s.marginLeft = '';
+  }
+}
+
 export function PageEditor({ note, pane, crumbs, actions }) {
   const ed = useRef();
   const titleRef = useRef();
@@ -122,7 +137,7 @@ export function PageEditor({ note, pane, crumbs, actions }) {
     root.querySelectorAll('.ink-block').forEach((b) => hydrateInk(b, { onChange: save, penOnly: () => S.settings.penOnly }));
     root.querySelectorAll('img').forEach((i) => {
       i.draggable = false;
-      i.style.width = i.dataset.w ? i.dataset.w + '%' : '';
+      applyImgWidth(i);
     });
     linkifyElement(root);
     root.querySelectorAll('a[href]:not(.wikilink)').forEach((a) => (a.title = `${a.getAttribute('href')} (opens in a new tab)`));
@@ -230,18 +245,29 @@ export function PageEditor({ note, pane, crumbs, actions }) {
     const doc = ed.current?.parentElement;
     if (!img?.isConnected || !doc) { setImgSel(null); return; }
     const r = img.getBoundingClientRect(), d = doc.getBoundingClientRect();
-    setImgSel({ img, top: r.top - d.top, left: r.left - d.left, width: r.width, height: r.height, pct: Number(img.dataset.w) || null, center: img.dataset.align === 'center' });
+    const pct = Number(img.dataset.w) || null;
+    // A wide image can be capped by the pane, so show the size it actually renders at.
+    const shown = pct && ed.current.clientWidth ? Math.round((r.width / ed.current.clientWidth) * 100) : null;
+    setImgSel({ img, top: r.top - d.top, left: r.left - d.left, width: r.width, height: r.height, pct, shown, center: img.dataset.align === 'center' });
+  };
+  // The widest an image can be: the page area inside the scroll padding.
+  const availWidth = () => {
+    const sc = scrollRef.current;
+    if (!sc) return ed.current.clientWidth;
+    const cs = getComputedStyle(sc);
+    return sc.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
   };
   const setImgSize = (img, pct) => {
-    if (pct) { img.dataset.w = String(pct); img.style.width = pct + '%'; }
-    else { delete img.dataset.w; img.style.width = ''; }
+    if (pct) img.dataset.w = String(pct); else delete img.dataset.w;
+    if (pct > 100) img.dataset.align = 'center'; // wide images are centred, and stay so if made smaller again
+    applyImgWidth(img);
     changed();
-    requestAnimationFrame(() => placeImg(img));
+    placeImg(img);
   };
   const toggleImgAlign = (img) => {
     if (img.dataset.align === 'center') delete img.dataset.align; else img.dataset.align = 'center';
     changed();
-    requestAnimationFrame(() => placeImg(img));
+    placeImg(img);
   };
   const deleteImg = (img) => {
     const parent = img.parentElement;
@@ -257,14 +283,18 @@ export function PageEditor({ note, pane, crumbs, actions }) {
     if (!img) return;
     const handle = e.currentTarget;
     handle.setPointerCapture(e.pointerId);
-    const colW = ed.current.clientWidth, startW = img.getBoundingClientRect().width, x0 = e.clientX;
-    const centered = img.dataset.align === 'center';
+    const colW = ed.current.clientWidth, maxW = Math.max(colW, availWidth()), startW = img.getBoundingClientRect().width, x0 = e.clientX;
+    // Centred images, and any image wider than the column, grow on both sides at once.
+    const both = img.dataset.align === 'center' || startW > colW + 1;
     const move = (ev) => {
-      let dx = (ev.clientX - x0) * (side === 'l' ? -1 : 1);
-      if (centered) dx *= 2; // a centred image grows on both sides
-      const pct = Math.round((Math.max(40, Math.min(colW, startW + dx)) / colW) * 100);
+      const dx = (ev.clientX - x0) * (side === 'l' ? -1 : 1);
+      let w = startW + dx * (both ? 2 : 1);
+      if (!both && w > colW) w = colW + (w - colW) * 2; // past the column it becomes centred
+      w = Math.max(40, Math.min(maxW, w));
+      const pct = Math.min(IMG_MAX_PCT, Math.round((w / colW) * 100));
       img.dataset.w = String(pct);
-      img.style.width = pct + '%';
+      if (pct > 100) img.dataset.align = 'center';
+      applyImgWidth(img);
       placeImg(img);
     };
     const up = () => {
@@ -277,6 +307,19 @@ export function PageEditor({ note, pane, crumbs, actions }) {
     handle.addEventListener('pointerup', up);
     handle.addEventListener('pointercancel', up);
   };
+  // Wide images are capped at the page area's width, which changes with the window, sidebar and split view.
+  useEffect(() => {
+    const sc = scrollRef.current, doc = ed.current?.parentElement;
+    if (!sc || !doc || typeof ResizeObserver === 'undefined') return;
+    const update = () => {
+      doc.style.setProperty('--avail', availWidth() + 'px');
+      if (imgSel?.img?.isConnected) placeImg(imgSel.img);
+    };
+    update(); // right away, so wide images don't start at the column width
+    const ro = new ResizeObserver(update);
+    ro.observe(sc);
+    return () => ro.disconnect();
+  }, [imgSel?.img]);
   useEffect(() => {
     if (!imgSel) return;
     const onResize = () => placeImg(imgSel.img);
@@ -788,13 +831,14 @@ export function PageEditor({ note, pane, crumbs, actions }) {
           <div class="img-frame" style=${`top:${imgSel.top}px;left:${imgSel.left}px;width:${imgSel.width}px;height:${imgSel.height}px`}>
             <span class="img-handle l" title="Drag to resize" onPointerDown=${(e) => startImgResize(e, 'l')}></span>
             <span class="img-handle r" title="Drag to resize" onPointerDown=${(e) => startImgResize(e, 'r')}></span>
-            <span class="img-size">${imgSel.pct ? imgSel.pct + '%' : 'Original size'}</span>
+            <span class="img-size">${imgSel.pct ? imgSel.shown + '%' : 'Original size'}</span>
           </div>
           <div class="img-bar" style=${`top:${imgSel.height > 90 ? imgSel.top + 8 : Math.max(0, imgSel.top - 44)}px;left:${Math.max(215, Math.min((ed.current?.clientWidth || 700) - 215, imgSel.left + imgSel.width / 2))}px`} onMouseDown=${(e) => e.preventDefault()}>
             ${[25, 50, 75, 100].map((p) => html`<button class=${cls('img-btn', imgSel.pct === p && 'on')} title=${`${p}% of the page width`} onClick=${() => setImgSize(imgSel.img, p)}>${p === 100 ? 'Full' : p + '%'}</button>`)}
+            <button class=${cls('img-btn', imgSel.pct > 100 && 'on')} title="As wide as the window allows, past the text column" onClick=${() => setImgSize(imgSel.img, IMG_MAX_PCT)}>Wide</button>
             <button class=${cls('img-btn', !imgSel.pct && 'on')} title="Original size" onClick=${() => setImgSize(imgSel.img, null)}>Original</button>
             <span class="sep"></span>
-            <button class=${cls('img-btn', imgSel.center && 'on')} title=${imgSel.center ? 'Align left' : 'Centre'} onClick=${() => toggleImgAlign(imgSel.img)}>${imgSel.center ? 'Left' : 'Centre'}</button>
+            ${!(imgSel.pct > 100) && html`<button class=${cls('img-btn', imgSel.center && 'on')} title=${imgSel.center ? 'Align left' : 'Centre'} onClick=${() => toggleImgAlign(imgSel.img)}>${imgSel.center ? 'Left' : 'Centre'}</button>`}
             <button class="img-btn icon" title="Delete image" aria-label="Delete image" onClick=${() => deleteImg(imgSel.img)}><${Icon} name="trash" size=${15} /></button>
           </div>`}
         ${codeBar && codeBar.pre.isConnected && html`<div class="code-bar" style=${`top:${codeBar.top + 6}px`} onMouseDown=${(e) => e.preventDefault()}>

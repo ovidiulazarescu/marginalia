@@ -161,7 +161,11 @@ Code blocks don't colour the syntax. The language setting is a label, and it's a
 
 Paste or drag an image into a page, or use **Insert → Image…**. Images are stored inside the note, scaled so the longest side is at most 1,600 pixels.
 
-Click an image to select it. Drag a corner to resize it, or use the buttons for 25%, 50%, 75%, full width and original size, plus centring and delete. Sizes are stored as a percentage of the page width, so images fit any window.
+Click an image to select it, then drag the handle on either side to resize it. The buttons above it set 25%, 50%, 75%, **Full** (the width of the text column), **Wide** and **Original** size, and also centre or delete the image.
+
+Images can be wider than the text column. Past 100%, an image is centred and extends into the margins on both sides, up to the width of the window. **Wide** makes it as wide as the window allows, which helps with screenshots full of small text.
+
+Sizes are stored as a percentage of the text column, so images adapt to any window. Exports have no margins, so a wide image fills the page width there.
 
 ### Sketches
 

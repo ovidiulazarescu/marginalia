@@ -65,9 +65,9 @@ function copyChildren(from, to) {
       if (!/^(data:image\/|https?:)/i.test(s)) continue;
       el.setAttribute('src', s);
       if (c.getAttribute('alt')) el.setAttribute('alt', c.getAttribute('alt'));
-      // Display size as a percentage of the page width, and alignment.
+      // Display size as a percentage of the page width (over 100 spills into the margins), and alignment.
       const w = Number(c.getAttribute('data-w'));
-      if (w >= 5 && w <= 100) el.setAttribute('data-w', String(Math.round(w)));
+      if (w >= 5 && w <= 300) el.setAttribute('data-w', String(Math.round(w)));
       if (c.getAttribute('data-align') === 'center') el.setAttribute('data-align', 'center');
     } else if (tag === 'UL' && c.classList.contains('tasks')) el.className = 'tasks';
     else if (tag === 'LI' && c.hasAttribute('data-checked')) el.setAttribute('data-checked', c.getAttribute('data-checked') === 'true' ? 'true' : 'false');
@@ -200,7 +200,7 @@ export function htmlToMarkdown(html, { titleOf = () => null, ink = () => '' } = 
       else if (t === 'CODE') s += '`' + c.textContent + '`';
       else if (t === 'SUB' || t === 'SUP') s += `<${t.toLowerCase()}>${inner()}</${t.toLowerCase()}>`;
       else if (t === 'IMG') s += c.getAttribute('data-w')
-        ? `<img src="${c.getAttribute('src')}" alt="${(c.getAttribute('alt') || '').replace(/"/g, '&quot;')}" width="${c.getAttribute('data-w')}%">` // keep the chosen size
+        ? `<img src="${c.getAttribute('src')}" alt="${(c.getAttribute('alt') || '').replace(/"/g, '&quot;')}" width="${Math.min(100, Number(c.getAttribute('data-w')))}%">` // keep the chosen size; a document has no margins to spill into
         : `![${c.getAttribute('alt') || ''}](${c.getAttribute('src')})`;
       else if (t === 'A') {
         const id = c.getAttribute('data-note-id');

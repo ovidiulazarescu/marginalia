@@ -21,7 +21,8 @@ function pageBodyHTML(n) {
   body.querySelectorAll('.ink-block').forEach((b) => { const f = document.createElement('figure'); f.className = 'sketch'; f.innerHTML = inkSVGString(b.getAttribute('data-ink'), true); b.replaceWith(f); });
   body.querySelectorAll('a.wikilink').forEach((a) => { const s = document.createElement('span'); s.className = 'wikilink'; s.textContent = a.textContent; a.replaceWith(s); });
   body.querySelectorAll('ul.tasks > li').forEach((li) => li.insertAdjacentHTML('afterbegin', li.getAttribute('data-checked') === 'true' ? '☑ ' : '☐ '));
-  body.querySelectorAll('img[data-w]').forEach((i) => { i.style.width = i.getAttribute('data-w') + '%'; });
+  // Exports have no margins to spill into, so wide images fill the page width, centred.
+  body.querySelectorAll('img[data-w]').forEach((i) => { const w = Number(i.getAttribute('data-w')); i.style.width = Math.min(100, w) + '%'; if (w > 100) i.style.margin = '0 auto'; });
   body.querySelectorAll('img[data-align="center"]').forEach((i) => { i.style.margin = '0 auto'; });
   return body.innerHTML;
 }
